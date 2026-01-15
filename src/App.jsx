@@ -7,6 +7,7 @@ import {
   signInWithEmailLink,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  updatePassword, // 追加: パスワード設定用
   signOut,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -20,7 +21,7 @@ import {
   query,
   serverTimestamp
 } from 'firebase/firestore';
-import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon } from 'lucide-react';
+import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound } from 'lucide-react';
 
 // --- Firebase Initialization ---
 
@@ -58,10 +59,10 @@ const AVATAR_COLORS = [
 
 // --- Components ---
 
-// 1. Auth Screen (Supports both Link & Password)
+// 1. Auth Screen
 const AuthScreen = () => {
   const [authMethod, setAuthMethod] = useState('link'); // 'link' or 'password'
-  const [isRegister, setIsRegister] = useState(false); // Only for password mode
+  const [isRegister, setIsRegister] = useState(false);
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -70,7 +71,6 @@ const AuthScreen = () => {
   const [linkSent, setLinkSent] = useState(false);
   const [error, setError] = useState('');
 
-  // 認証ハンドラ
   const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -90,13 +90,10 @@ const AuthScreen = () => {
       } else {
         // --- パスワード認証 ---
         if (isRegister) {
-          // 新規登録
           await createUserWithEmailAndPassword(auth, email, password);
         } else {
-          // ログイン
           await signInWithEmailAndPassword(auth, email, password);
         }
-        // 成功すれば onAuthStateChanged が発火して画面遷移する
       }
     } catch (err) {
       console.error("Auth error:", err);
@@ -111,7 +108,6 @@ const AuthScreen = () => {
     }
   };
 
-  // リンク送信完了画面
   if (linkSent) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 to-rose-400 p-4">
@@ -147,7 +143,6 @@ const AuthScreen = () => {
           MatchAppへようこそ
         </h1>
         
-        {/* 認証方法切り替えタブ */}
         <div className="flex border-b mb-6 mt-4">
           <button
             className={`flex-1 pb-2 text-sm font-medium flex items-center justify-center gap-2 ${authMethod === 'link' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-gray-400'}`}
@@ -210,7 +205,7 @@ const AuthScreen = () => {
 
         {authMethod === 'link' && (
           <p className="text-xs text-center text-gray-400 mt-4">
-            メールアドレス宛にログイン用のリンクを送ります。<br/>パスワードを覚える必要はありません。
+            メールアドレス宛にログイン用のリンクを送ります。
           </p>
         )}
 
@@ -229,7 +224,78 @@ const AuthScreen = () => {
   );
 };
 
-// 2. Onboarding (Initial Profile Setup)
+// 2. Password Setup Screen (NEW)
+const PasswordSetup = ({ user, onComplete }) => {
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    if (password.length < 6) {
+      setError('パスワードは6文字以上で入力してください');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    
+    try {
+      await updatePassword(user, password);
+      onComplete(); // 完了したら次のステップへ
+    } catch (err) {
+      console.error(err);
+      setError('パスワードの設定に失敗しました。再度お試しください。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="bg-white w-full max-w-md p-8 rounded-2xl shadow-xl">
+        <div className="flex justify-center mb-6">
+          <div className="bg-blue-100 p-4 rounded-full">
+            <KeyRound className="w-10 h-10 text-blue-500" />
+          </div>
+        </div>
+        <h2 className="text-2xl font-bold text-center text-gray-800 mb-2">ログインパスワード設定</h2>
+        <p className="text-center text-gray-500 mb-6 text-sm">
+          次回以降、メールアドレスとパスワードでも<br/>ログインできるように設定します。
+        </p>
+
+        {error && (
+          <div className="bg-red-50 text-red-500 p-3 rounded-lg mb-4 text-sm">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSave} className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">新しいパスワード</label>
+            <input
+              type="password"
+              required
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="6文字以上"
+              minLength={6}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-lg transition transform active:scale-95 disabled:opacity-50"
+          >
+            {loading ? '設定中...' : 'パスワードを設定して次へ'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// 3. Onboarding (Initial Profile Setup)
 const Onboarding = ({ user, onComplete }) => {
   const [formData, setFormData] = useState({
     displayName: '',
@@ -363,7 +429,7 @@ const Onboarding = ({ user, onComplete }) => {
   );
 };
 
-// 3. Main App Components
+// 4. Main App Components
 const Home = ({ profiles, onSelectUser }) => (
   <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
     {profiles.length === 0 ? (
@@ -610,6 +676,7 @@ export default function App() {
   const [allMessages, setAllMessages] = useState([]);
   const [chatTarget, setChatTarget] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [requirePasswordSetup, setRequirePasswordSetup] = useState(false); // パスワード設定が必要かどうかの状態
 
   // 1. Authentication Logic
   useEffect(() => {
@@ -622,9 +689,15 @@ export default function App() {
       
       if (email) {
         signInWithEmailLink(auth, email, window.location.href)
-          .then(() => {
+          .then((result) => {
             window.localStorage.removeItem('emailForSignIn');
+            // URLパラメータをクリア
             window.history.replaceState({}, document.title, window.location.pathname);
+            
+            // 重要: 新規ユーザー（初回リンク認証）の場合、パスワード設定を必須にする
+            if (result.additionalUserInfo?.isNewUser) {
+              setRequirePasswordSetup(true);
+            }
           })
           .catch((error) => {
             console.error("Link sign-in error:", error);
@@ -639,6 +712,7 @@ export default function App() {
       setAuthLoading(false);
       if (!u) {
         setMyProfile(null);
+        setRequirePasswordSetup(false);
       }
     });
     return () => unsubscribe();
@@ -687,6 +761,7 @@ export default function App() {
   const handleLogout = async () => {
     await signOut(auth);
     setActiveTab('home');
+    setRequirePasswordSetup(false);
   };
 
   // Rendering Flow
@@ -697,7 +772,17 @@ export default function App() {
     return <AuthScreen />;
   }
 
-  // 2. Logged In but No Profile
+  // 2. Logged In: Check if Password Setup is Required (New Step)
+  if (requirePasswordSetup) {
+    return (
+      <PasswordSetup 
+        user={user} 
+        onComplete={() => setRequirePasswordSetup(false)} 
+      />
+    );
+  }
+
+  // 3. Logged In but No Profile
   if (!myProfile && !isEditing) {
     return (
       <Onboarding 
@@ -707,7 +792,7 @@ export default function App() {
     );
   }
 
-  // 3. Profile Editing
+  // 4. Profile Editing
   if (isEditing) {
     return (
       <div className="relative">
@@ -719,7 +804,7 @@ export default function App() {
     );
   }
 
-  // 4. Chat Overlay
+  // 5. Chat Overlay
   if (chatTarget) {
     return (
       <MessageDetail 
@@ -731,7 +816,7 @@ export default function App() {
     );
   }
 
-  // 5. Main Content
+  // 6. Main Content
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
