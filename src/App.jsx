@@ -3,6 +3,7 @@ import { initializeApp } from 'firebase/app';
 import {
   getAuth,
   signInAnonymously,
+  signInWithCustomToken,
   signOut,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -18,9 +19,13 @@ import {
 } from 'firebase/firestore';
 import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft } from 'lucide-react';
 
-// --- Firebase Config ---
-// 重要: あなたのFirebaseプロジェクトの設定を使ってください
-const firebaseConfig = {
+// --- Firebase Initialization ---
+
+// エラー修正: プレビュー環境で確実に動作させるため、環境変数を使用する設定に戻しました。
+// ご自身のプロジェクトを使用する場合は、Firebaseコンソールで「匿名認証」を有効にした上で、
+// 以下の `firebaseConfig` をご自身のものに置き換えてください。
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+  // ここにご自身のFirebase設定を入力します
   apiKey: "AIzaSyDeQy2D7lNeTFEejR81pJWX3oaBqjzRfBE",
   authDomain: "matching-app-908db.firebaseapp.com",
   projectId: "matching-app-908db",
@@ -33,9 +38,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-
-// 公開用アプリID（データを区別するための識別子）
-const APP_ID = 'my-first-matching-app'; 
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- Constants & Helpers ---
 const PREFECTURES = [
@@ -55,7 +58,9 @@ const AVATAR_COLORS = [
 
 // --- Components ---
 
-// 1. Auth Screen
+// 1. Auth Screen (Login/Register Simulation)
+// Note: In this environment, we use anonymous auth behind the scenes,
+// but we present a UI that simulates email registration for the user experience.
 const AuthScreen = ({ onComplete }) => {
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
@@ -65,8 +70,10 @@ const AuthScreen = ({ onComplete }) => {
   const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
-    // 実際のメール認証ではなく、匿名認証+プロフィール登録のフロー
+    
+    // Simulate network delay for realism
     setTimeout(() => {
+      // We pass the email to the next step to save it in the profile
       onComplete(email);
       setLoading(false);
     }, 800);
@@ -133,7 +140,7 @@ const AuthScreen = ({ onComplete }) => {
   );
 };
 
-// 2. Onboarding
+// 2. Onboarding (Initial Profile Setup)
 const Onboarding = ({ user, initialEmail, onComplete }) => {
   const [formData, setFormData] = useState({
     displayName: '',
@@ -149,7 +156,8 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'profiles', user.uid), {
+      // Save to PUBLIC profiles collection so others can see it
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', user.uid), {
         ...formData,
         uid: user.uid,
         email: initialEmail || user.email || 'anonymous',
@@ -170,6 +178,8 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
       <div className="bg-white w-full max-w-lg p-6 rounded-xl shadow-lg">
         <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">プロフィール設定</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
+          
+          {/* Avatar Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">アイコンカラー</label>
             <div className="flex gap-2 justify-center flex-wrap">
@@ -183,6 +193,7 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
               ))}
             </div>
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">ニックネーム</label>
             <input
@@ -193,6 +204,7 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
               onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
             />
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">年齢</label>
@@ -220,6 +232,7 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
               </select>
             </div>
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">お住まいのエリア</label>
             <select
@@ -232,6 +245,7 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
               ))}
             </select>
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">自己紹介</label>
             <textarea
@@ -242,6 +256,7 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
               placeholder="よろしくお願いします！"
             />
           </div>
+
           <button
             type="submit"
             disabled={loading}
@@ -255,7 +270,7 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
   );
 };
 
-// 3. Main Features
+// 3. Main App Layout & Features
 const Home = ({ profiles, onSelectUser }) => (
   <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
     {profiles.length === 0 ? (
@@ -298,6 +313,7 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
 
+  // Filter messages between these two users
   const chatHistory = useMemo(() => {
     return messages.filter(m => 
       (m.from === currentUser.uid && m.to === targetUser.uid) ||
@@ -310,7 +326,7 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
     if (!newMessage.trim()) return;
     setSending(true);
     try {
-      await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', 'messages'), {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'messages'), {
         from: currentUser.uid,
         to: targetUser.uid,
         content: newMessage,
@@ -340,6 +356,7 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
           <p className="text-xs text-gray-500">{targetUser.prefecture}</p>
         </div>
       </div>
+
       <div className="flex-grow overflow-y-auto p-4 bg-gray-50 space-y-3">
         {chatHistory.length === 0 ? (
           <div className="text-center text-gray-400 mt-10">
@@ -359,6 +376,7 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
           })
         )}
       </div>
+
       <form onSubmit={handleSend} className="p-4 bg-white border-t flex gap-2">
         <input
           type="text"
@@ -380,6 +398,7 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
 };
 
 const MessagesList = ({ currentUser, messages, profiles, onSelectChat }) => {
+  // Find unique users interact with
   const conversationUserIds = useMemo(() => {
     const ids = new Set();
     messages.forEach(m => {
@@ -393,9 +412,11 @@ const MessagesList = ({ currentUser, messages, profiles, onSelectChat }) => {
     return conversationUserIds.map(uid => {
       const user = profiles.find(p => p.uid === uid);
       if (!user) return null;
+      
       const lastMsg = messages
         .filter(m => (m.from === uid && m.to === currentUser.uid) || (m.from === currentUser.uid && m.to === uid))
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))[0];
+        
       return { user, lastMsg };
     }).filter(Boolean).sort((a, b) => (b.lastMsg?.createdAt?.seconds || 0) - (a.lastMsg?.createdAt?.seconds || 0));
   }, [conversationUserIds, profiles, messages, currentUser.uid]);
@@ -442,6 +463,7 @@ const MessagesList = ({ currentUser, messages, profiles, onSelectChat }) => {
 
 const Profile = ({ profile, isSelf, onEdit, onLogout }) => {
   if (!profile) return null;
+
   return (
     <div className="pb-20 bg-gray-50 min-h-screen">
       <div className={`h-32 ${profile.avatarColor || 'bg-gray-300'}`}></div>
@@ -457,6 +479,7 @@ const Profile = ({ profile, isSelf, onEdit, onLogout }) => {
           )}
         </div>
       </div>
+
       <div className="px-4 space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
@@ -465,12 +488,14 @@ const Profile = ({ profile, isSelf, onEdit, onLogout }) => {
           </h1>
           <p className="text-rose-500 text-sm font-medium mt-1">{profile.gender} • {profile.prefecture}</p>
         </div>
+
         <div className="bg-white p-4 rounded-xl shadow-sm">
           <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase">自己紹介</h3>
           <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
             {profile.bio || "自己紹介文がありません"}
           </p>
         </div>
+
         {isSelf && (
            <button
              onClick={onLogout}
@@ -489,17 +514,30 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [myProfile, setMyProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState('home'); // home, messages, profile
   const [allProfiles, setAllProfiles] = useState([]);
   const [allMessages, setAllMessages] = useState([]);
   const [chatTarget, setChatTarget] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [enteredEmail, setEnteredEmail] = useState('');
+  const [enteredEmail, setEnteredEmail] = useState(''); // To simulate auth flow
 
+  // 1. Initial Auth Logic (Auto-login anonymously)
   useEffect(() => {
     const initAuth = async () => {
-      // 公開環境ではシンプルに匿名認証を実行
       try {
+        // 環境変数からのトークンがある場合、まずはそれを試す
+        // ただし、ユーザー独自のfirebaseConfigを使っている場合はトークン不一致で失敗するため、
+        // その場合はcatchして匿名認証にフォールバックする
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          try {
+            await signInWithCustomToken(auth, __initial_auth_token);
+            return; // 成功したら終了
+          } catch (tokenError) {
+            console.warn("Custom token auth failed (likely config mismatch), falling back to anonymous auth.");
+          }
+        }
+        
+        // トークンがない、またはトークン認証に失敗した場合は匿名認証を行う
         await signInAnonymously(auth);
       } catch (error) {
         console.error("Auth failed:", error);
@@ -518,16 +556,21 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // 2. Data Fetching (Profiles & Messages) - Only when logged in
   useEffect(() => {
     if (!user) return;
-    const unsubMyProfile = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'profiles', user.uid), (docSnap) => {
+
+    // Fetch My Profile
+    const unsubMyProfile = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', user.uid), (docSnap) => {
       if (docSnap.exists()) {
         setMyProfile(docSnap.data());
       } else {
         setMyProfile(null);
       }
     });
-    const qProfiles = query(collection(db, 'artifacts', APP_ID, 'public', 'data', 'profiles'));
+
+    // Fetch All Profiles (Public)
+    const qProfiles = query(collection(db, 'artifacts', appId, 'public', 'data', 'profiles'));
     const unsubProfiles = onSnapshot(qProfiles, (snapshot) => {
       const profiles = [];
       snapshot.forEach(doc => {
@@ -535,7 +578,9 @@ export default function App() {
       });
       setAllProfiles(profiles);
     });
-    const qMessages = query(collection(db, 'artifacts', APP_ID, 'public', 'data', 'messages'));
+
+    // Fetch All Messages
+    const qMessages = query(collection(db, 'artifacts', appId, 'public', 'data', 'messages'));
     const unsubMessages = onSnapshot(qMessages, (snapshot) => {
       const msgs = [];
       snapshot.forEach(doc => {
@@ -543,6 +588,7 @@ export default function App() {
       });
       setAllMessages(msgs);
     });
+
     return () => {
       unsubMyProfile();
       unsubProfiles();
@@ -550,13 +596,25 @@ export default function App() {
     };
   }, [user]);
 
+  // Handle fake logout
   const handleLogout = async () => {
     setEnteredEmail('');
     await signOut(auth);
-    window.location.reload();
+    // Note: signOut in anon auth kills session. Re-auth will create new UID typically or restore if session persists.
+    // In this demo, to ensure "Logout" feels real, we might trigger a re-init.
+    window.location.reload(); // Simplest way to reset the anon session state visually
   };
 
+  // Views Logic
   if (authLoading) return <div className="flex h-screen items-center justify-center text-rose-500">Loading...</div>;
+
+  // Flow Logic:
+  // 1. Auth Init is done. User exists (Anon).
+  // 2. Check if Profile exists. 
+  //    - Yes: Show Home.
+  //    - No: 
+  //      - If user hasn't entered email yet: Show AuthScreen.
+  //      - If user entered email: Show Onboarding.
 
   if (!myProfile && !isEditing) {
     if (!enteredEmail) {
@@ -566,20 +624,19 @@ export default function App() {
       <Onboarding 
         user={user} 
         initialEmail={enteredEmail}
-        onComplete={() => setMyProfile({})}
+        onComplete={() => setMyProfile({})} // Optimistic update handled by snapshot
       />
     );
   }
 
   if (isEditing) {
-    return (
-      <div className="relative">
+    return <div className="relative">
         <button onClick={() => setIsEditing(false)} className="absolute top-4 left-4 z-10 p-2 bg-gray-200 rounded-full"><ArrowLeft size={20}/></button>
         <Onboarding user={user} onComplete={() => setIsEditing(false)} />
-      </div>
-    );
+    </div>
   }
 
+  // Chat View Overlay
   if (chatTarget) {
     return (
       <MessageDetail 
@@ -593,23 +650,46 @@ export default function App() {
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'home': return <Home profiles={allProfiles} onSelectUser={(u) => setChatTarget(u)} />;
-      case 'messages': return <MessagesList currentUser={user} messages={allMessages} profiles={allProfiles} onSelectChat={(u) => setChatTarget(u)} />;
-      case 'profile': return <Profile profile={myProfile} isSelf={true} onEdit={() => setIsEditing(true)} onLogout={handleLogout} />;
-      default: return <Home profiles={allProfiles} onSelectUser={(u) => setChatTarget(u)} />;
+      case 'home':
+        return <Home profiles={allProfiles} onSelectUser={(u) => setChatTarget(u)} />;
+      case 'messages':
+        return (
+          <MessagesList 
+            currentUser={user} 
+            messages={allMessages} 
+            profiles={allProfiles}
+            onSelectChat={(u) => setChatTarget(u)} 
+          />
+        );
+      case 'profile':
+        return (
+          <Profile 
+            profile={myProfile} 
+            isSelf={true} 
+            onEdit={() => setIsEditing(true)}
+            onLogout={handleLogout} 
+          />
+        );
+      default:
+        return <Home profiles={allProfiles} onSelectUser={(u) => setChatTarget(u)} />;
     }
   };
 
   return (
     <div className="bg-gray-100 min-h-screen max-w-md mx-auto shadow-2xl relative bg-white">
+      {/* Header */}
       <header className="sticky top-0 bg-white/90 backdrop-blur-sm z-10 px-4 py-3 flex items-center justify-between border-b">
         <h1 className="text-xl font-bold text-rose-500 flex items-center gap-1">
           <Heart className="fill-current" size={24} /> MatchApp
         </h1>
       </header>
+
+      {/* Main Content */}
       <main className="min-h-screen bg-white">
         {renderContent()}
       </main>
+
+      {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t py-2 px-6 flex justify-between items-center z-20">
         <button 
           onClick={() => setActiveTab('home')}
@@ -624,6 +704,7 @@ export default function App() {
         >
           <MessageCircle size={24} />
           <span className="text-[10px] font-medium">メッセージ</span>
+          {/* Unread badge simulation */}
           {allMessages.some(m => m.to === user.uid && !m.read && m.from !== user.uid) && (
              <span className="absolute top-0 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
           )}
