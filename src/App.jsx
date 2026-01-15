@@ -7,7 +7,7 @@ import {
   signInWithEmailLink,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  updatePassword, // 追加: パスワード設定用
+  updatePassword, // パスワード更新用
   signOut,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -59,10 +59,10 @@ const AVATAR_COLORS = [
 
 // --- Components ---
 
-// 1. Auth Screen
+// 1. Auth Screen (Login & Register Request)
 const AuthScreen = () => {
-  const [authMethod, setAuthMethod] = useState('link'); // 'link' or 'password'
-  const [isRegister, setIsRegister] = useState(false);
+  const [authMethod, setAuthMethod] = useState('link'); // 'link' (Register) or 'password' (Login)
+  const [isRegister, setIsRegister] = useState(false); // For Password mode toggle
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -78,9 +78,9 @@ const AuthScreen = () => {
 
     try {
       if (authMethod === 'link') {
-        // --- メールリンク認証 ---
+        // --- メールリンク認証（新規登録用） ---
         const actionCodeSettings = {
-          url: window.location.href,
+          url: window.location.href, // 認証後に戻ってくるURL
           handleCodeInApp: true,
         };
         await sendSignInLinkToEmail(auth, email, actionCodeSettings);
@@ -88,10 +88,12 @@ const AuthScreen = () => {
         setLinkSent(true);
 
       } else {
-        // --- パスワード認証 ---
+        // --- パスワード認証（ログイン用） ---
         if (isRegister) {
+          // パスワードでの新規登録も許可する場合
           await createUserWithEmailAndPassword(auth, email, password);
         } else {
+          // 通常のログイン
           await signInWithEmailAndPassword(auth, email, password);
         }
       }
@@ -108,6 +110,7 @@ const AuthScreen = () => {
     }
   };
 
+  // 認証メール送信完了画面
   if (linkSent) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 to-rose-400 p-4">
@@ -117,8 +120,9 @@ const AuthScreen = () => {
           </div>
           <h2 className="text-xl font-bold text-gray-800 mb-4">認証メールを送信しました</h2>
           <p className="text-gray-600 mb-6">
-            <strong>{email}</strong> 宛にメールを送信しました。<br />
-            メール内のリンクをクリックして、本登録へ進んでください。
+            <strong>{email}</strong> 宛に本登録用のメールを送信しました。<br />
+            記載されているURLをクリックして、<br/>
+            <strong>パスワード設定</strong>と<strong>プロフィール登録</strong>へ進んでください。
           </p>
           <button 
             onClick={() => setLinkSent(false)}
@@ -140,21 +144,22 @@ const AuthScreen = () => {
           </div>
         </div>
         <h1 className="text-2xl font-bold text-center text-gray-800 mb-2">
-          MatchAppへようこそ
+          MatchApp
         </h1>
         
+        {/* 認証方法の切り替えタブ */}
         <div className="flex border-b mb-6 mt-4">
           <button
             className={`flex-1 pb-2 text-sm font-medium flex items-center justify-center gap-2 ${authMethod === 'link' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-gray-400'}`}
             onClick={() => { setAuthMethod('link'); setError(''); }}
           >
-            <LinkIcon size={16} /> パスワードレス
+            <LinkIcon size={16} /> 新規登録 (メール)
           </button>
           <button
             className={`flex-1 pb-2 text-sm font-medium flex items-center justify-center gap-2 ${authMethod === 'password' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-gray-400'}`}
             onClick={() => { setAuthMethod('password'); setError(''); }}
           >
-            <Lock size={16} /> パスワード
+            <Lock size={16} /> ログイン
           </button>
         </div>
 
@@ -205,7 +210,8 @@ const AuthScreen = () => {
 
         {authMethod === 'link' && (
           <p className="text-xs text-center text-gray-400 mt-4">
-            メールアドレス宛にログイン用のリンクを送ります。
+            入力されたメールアドレスに本登録用のURLを送信します。<br/>
+            URLをクリックすると、パスワード設定画面へ移動します。
           </p>
         )}
 
@@ -215,7 +221,7 @@ const AuthScreen = () => {
               onClick={() => setIsRegister(!isRegister)}
               className="text-sm text-rose-500 hover:text-rose-700 font-medium"
             >
-              {isRegister ? 'すでにアカウントをお持ちの方はこちら（ログイン）' : '初めての方はこちら（新規登録）'}
+              {isRegister ? 'すでにアカウントをお持ちの方はこちら（ログイン）' : 'パスワードで新規登録する場合はこちら'}
             </button>
           </div>
         )}
@@ -224,7 +230,7 @@ const AuthScreen = () => {
   );
 };
 
-// 2. Password Setup Screen (NEW)
+// 2. Password Setup Screen (認証リンククリック後に表示)
 const PasswordSetup = ({ user, onComplete }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -240,8 +246,9 @@ const PasswordSetup = ({ user, onComplete }) => {
     setError('');
     
     try {
+      // Firebase Authの現在のユーザーにパスワードを設定
       await updatePassword(user, password);
-      onComplete(); // 完了したら次のステップへ
+      onComplete(); // 完了コールバック（Onboardingへ遷移）
     } catch (err) {
       console.error(err);
       setError('パスワードの設定に失敗しました。再度お試しください。');
@@ -260,7 +267,8 @@ const PasswordSetup = ({ user, onComplete }) => {
         </div>
         <h2 className="text-2xl font-bold text-center text-gray-800 mb-2">ログインパスワード設定</h2>
         <p className="text-center text-gray-500 mb-6 text-sm">
-          次回以降、メールアドレスとパスワードでも<br/>ログインできるように設定します。
+          本登録ありがとうございます。<br/>
+          次回以降のログインに使用するパスワードを設定してください。
         </p>
 
         {error && (
@@ -429,7 +437,7 @@ const Onboarding = ({ user, onComplete }) => {
   );
 };
 
-// 4. Main App Components
+// 4. Main App Components (Home, MessageDetail, MessagesList, Profile)
 const Home = ({ profiles, onSelectUser }) => (
   <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
     {profiles.length === 0 ? (
@@ -684,24 +692,26 @@ export default function App() {
     if (isSignInWithEmailLink(auth, window.location.href)) {
       let email = window.localStorage.getItem('emailForSignIn');
       if (!email) {
+        // 同じデバイス/ブラウザでない場合、ユーザーに入力を求める
         email = window.prompt('確認のため、メールアドレスをもう一度入力してください');
       }
       
       if (email) {
         signInWithEmailLink(auth, email, window.location.href)
           .then((result) => {
+            // サインイン成功
             window.localStorage.removeItem('emailForSignIn');
             // URLパラメータをクリア
             window.history.replaceState({}, document.title, window.location.pathname);
             
-            // 重要: 新規ユーザー（初回リンク認証）の場合、パスワード設定を必須にする
+            // 重要: リンク認証後、特に新規ユーザーの場合はパスワード設定を強制する
             if (result.additionalUserInfo?.isNewUser) {
               setRequirePasswordSetup(true);
             }
           })
           .catch((error) => {
             console.error("Link sign-in error:", error);
-            alert("ログインに失敗しました。リンクの有効期限が切れている可能性があります。");
+            alert("ログインに失敗しました。リンクの有効期限が切れているか、既に使用済みです。");
           });
       }
     }
@@ -727,7 +737,7 @@ export default function App() {
       if (docSnap.exists()) {
         setMyProfile(docSnap.data());
       } else {
-        setMyProfile(null); // Profile doesn't exist yet -> trigger Onboarding
+        setMyProfile(null); // Profile doesn't exist yet -> will trigger Onboarding (after password setup)
       }
     });
 
@@ -782,7 +792,7 @@ export default function App() {
     );
   }
 
-  // 3. Logged In but No Profile
+  // 3. Logged In but No Profile (After Password Setup)
   if (!myProfile && !isEditing) {
     return (
       <Onboarding 
