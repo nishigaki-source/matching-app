@@ -2,8 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
-  signInAnonymously,
-  signInWithCustomToken,
+  sendSignInLinkToEmail,
+  isSignInWithEmailLink,
+  signInWithEmailLink,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -17,13 +20,10 @@ import {
   query,
   serverTimestamp
 } from 'firebase/firestore';
-import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft } from 'lucide-react';
+import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon } from 'lucide-react';
 
 // --- Firebase Initialization ---
 
-// エラー修正: プレビュー環境で確実に動作させるため、環境変数を使用する設定に戻しました。
-// ご自身のプロジェクトを使用する場合は、Firebaseコンソールで「匿名認証」を有効にした上で、
-// 以下の `firebaseConfig` をご自身のものに置き換えてください。
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
   // ここにご自身のFirebase設定を入力します
   apiKey: "AIzaSyDeQy2D7lNeTFEejR81pJWX3oaBqjzRfBE",
@@ -58,26 +58,82 @@ const AVATAR_COLORS = [
 
 // --- Components ---
 
-// 1. Auth Screen (Login/Register Simulation)
-// Note: In this environment, we use anonymous auth behind the scenes,
-// but we present a UI that simulates email registration for the user experience.
-const AuthScreen = ({ onComplete }) => {
-  const [isRegister, setIsRegister] = useState(false);
+// 1. Auth Screen (Supports both Link & Password)
+const AuthScreen = () => {
+  const [authMethod, setAuthMethod] = useState('link'); // 'link' or 'password'
+  const [isRegister, setIsRegister] = useState(false); // Only for password mode
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  
   const [loading, setLoading] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
+  const [error, setError] = useState('');
 
+  // 認証ハンドラ
   const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
-    
-    // Simulate network delay for realism
-    setTimeout(() => {
-      // We pass the email to the next step to save it in the profile
-      onComplete(email);
+    setError('');
+
+    try {
+      if (authMethod === 'link') {
+        // --- メールリンク認証 ---
+        const actionCodeSettings = {
+          url: window.location.href,
+          handleCodeInApp: true,
+        };
+        await sendSignInLinkToEmail(auth, email, actionCodeSettings);
+        window.localStorage.setItem('emailForSignIn', email);
+        setLinkSent(true);
+
+      } else {
+        // --- パスワード認証 ---
+        if (isRegister) {
+          // 新規登録
+          await createUserWithEmailAndPassword(auth, email, password);
+        } else {
+          // ログイン
+          await signInWithEmailAndPassword(auth, email, password);
+        }
+        // 成功すれば onAuthStateChanged が発火して画面遷移する
+      }
+    } catch (err) {
+      console.error("Auth error:", err);
+      let msg = "エラーが発生しました。";
+      if (err.code === 'auth/wrong-password') msg = "パスワードが間違っています。";
+      if (err.code === 'auth/user-not-found') msg = "ユーザーが見つかりません。";
+      if (err.code === 'auth/email-already-in-use') msg = "このメールアドレスは既に使用されています。";
+      if (err.code === 'auth/weak-password') msg = "パスワードは6文字以上で設定してください。";
+      setError(msg);
+    } finally {
       setLoading(false);
-    }, 800);
+    }
   };
+
+  // リンク送信完了画面
+  if (linkSent) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 to-rose-400 p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
+          <div className="flex justify-center mb-6">
+            <CheckCircle className="w-16 h-16 text-green-500" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-800 mb-4">認証メールを送信しました</h2>
+          <p className="text-gray-600 mb-6">
+            <strong>{email}</strong> 宛にメールを送信しました。<br />
+            メール内のリンクをクリックして、本登録へ進んでください。
+          </p>
+          <button 
+            onClick={() => setLinkSent(false)}
+            className="mt-6 text-rose-500 hover:text-rose-700 font-medium"
+          >
+            戻る
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 to-rose-400 p-4">
@@ -88,11 +144,30 @@ const AuthScreen = ({ onComplete }) => {
           </div>
         </div>
         <h1 className="text-2xl font-bold text-center text-gray-800 mb-2">
-          {isRegister ? '新規アカウント作成' : 'おかえりなさい'}
+          MatchAppへようこそ
         </h1>
-        <p className="text-center text-gray-500 mb-8">
-          素敵な出会いを見つけましょう
-        </p>
+        
+        {/* 認証方法切り替えタブ */}
+        <div className="flex border-b mb-6 mt-4">
+          <button
+            className={`flex-1 pb-2 text-sm font-medium flex items-center justify-center gap-2 ${authMethod === 'link' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-gray-400'}`}
+            onClick={() => { setAuthMethod('link'); setError(''); }}
+          >
+            <LinkIcon size={16} /> パスワードレス
+          </button>
+          <button
+            className={`flex-1 pb-2 text-sm font-medium flex items-center justify-center gap-2 ${authMethod === 'password' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-gray-400'}`}
+            onClick={() => { setAuthMethod('password'); setError(''); }}
+          >
+            <Lock size={16} /> パスワード
+          </button>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 text-red-500 p-3 rounded-lg mb-4 text-sm">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleAuth} className="space-y-4">
           <div>
@@ -100,48 +175,62 @@ const AuthScreen = ({ onComplete }) => {
             <input
               type="email"
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent outline-none transition"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="example@email.com"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">パスワード</label>
-            <input
-              type="password"
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent outline-none transition"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="6文字以上"
-            />
-          </div>
+
+          {authMethod === 'password' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">パスワード</label>
+              <input
+                type="password"
+                required
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="6文字以上"
+                minLength={6}
+              />
+            </div>
+          )}
           
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-3 rounded-lg transition duration-200 transform active:scale-95 disabled:opacity-50"
+            className="w-full bg-rose-500 hover:bg-rose-600 text-white font-bold py-3 rounded-lg transition transform active:scale-95 disabled:opacity-50"
           >
-            {loading ? '処理中...' : (isRegister ? '登録してはじめる' : 'ログインしてはじめる')}
+            {loading ? '処理中...' : (
+              authMethod === 'link' ? '認証メールを送信' : (isRegister ? '新規登録' : 'ログイン')
+            )}
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => setIsRegister(!isRegister)}
-            className="text-sm text-rose-500 hover:text-rose-700 font-medium"
-          >
-            {isRegister ? 'すでにアカウントをお持ちの方はこちら' : '初めての方はこちら（新規登録）'}
-          </button>
-        </div>
+        {authMethod === 'link' && (
+          <p className="text-xs text-center text-gray-400 mt-4">
+            メールアドレス宛にログイン用のリンクを送ります。<br/>パスワードを覚える必要はありません。
+          </p>
+        )}
+
+        {authMethod === 'password' && (
+          <div className="mt-6 text-center">
+            <button
+              onClick={() => setIsRegister(!isRegister)}
+              className="text-sm text-rose-500 hover:text-rose-700 font-medium"
+            >
+              {isRegister ? 'すでにアカウントをお持ちの方はこちら（ログイン）' : '初めての方はこちら（新規登録）'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 // 2. Onboarding (Initial Profile Setup)
-const Onboarding = ({ user, initialEmail, onComplete }) => {
+const Onboarding = ({ user, onComplete }) => {
   const [formData, setFormData] = useState({
     displayName: '',
     age: '20',
@@ -156,11 +245,10 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      // Save to PUBLIC profiles collection so others can see it
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', user.uid), {
         ...formData,
         uid: user.uid,
-        email: initialEmail || user.email || 'anonymous',
+        email: user.email,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -176,10 +264,14 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-lg p-6 rounded-xl shadow-lg">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">プロフィール設定</h2>
+        <div className="text-center mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">プロフィール作成</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            利用を開始するためにユーザー情報を登録してください
+          </p>
+        </div>
+        
         <form onSubmit={handleSubmit} className="space-y-4">
-          
-          {/* Avatar Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">アイコンカラー</label>
             <div className="flex gap-2 justify-center flex-wrap">
@@ -199,9 +291,10 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
             <input
               type="text"
               required
-              className="w-full border rounded-lg p-2 focus:ring-rose-500 focus:border-rose-500"
+              className="w-full border rounded-lg p-2 focus:ring-rose-500"
               value={formData.displayName}
               onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+              placeholder="例: たろう"
             />
           </div>
 
@@ -253,7 +346,7 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
               className="w-full border rounded-lg p-2 h-24"
               value={formData.bio}
               onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-              placeholder="よろしくお願いします！"
+              placeholder="趣味や休日の過ごし方など..."
             />
           </div>
 
@@ -262,7 +355,7 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
             disabled={loading}
             className="w-full bg-rose-500 text-white font-bold py-3 rounded-lg hover:bg-rose-600 disabled:opacity-50"
           >
-            {loading ? '保存中...' : 'はじめる'}
+            {loading ? '保存中...' : '利用を開始する'}
           </button>
         </form>
       </div>
@@ -270,7 +363,7 @@ const Onboarding = ({ user, initialEmail, onComplete }) => {
   );
 };
 
-// 3. Main App Layout & Features
+// 3. Main App Components
 const Home = ({ profiles, onSelectUser }) => (
   <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
     {profiles.length === 0 ? (
@@ -313,7 +406,6 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
 
-  // Filter messages between these two users
   const chatHistory = useMemo(() => {
     return messages.filter(m => 
       (m.from === currentUser.uid && m.to === targetUser.uid) ||
@@ -398,7 +490,6 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
 };
 
 const MessagesList = ({ currentUser, messages, profiles, onSelectChat }) => {
-  // Find unique users interact with
   const conversationUserIds = useMemo(() => {
     const ids = new Set();
     messages.forEach(m => {
@@ -514,49 +605,46 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [myProfile, setMyProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('home'); // home, messages, profile
+  const [activeTab, setActiveTab] = useState('home');
   const [allProfiles, setAllProfiles] = useState([]);
   const [allMessages, setAllMessages] = useState([]);
   const [chatTarget, setChatTarget] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [enteredEmail, setEnteredEmail] = useState(''); // To simulate auth flow
 
-  // 1. Initial Auth Logic (Auto-login anonymously)
+  // 1. Authentication Logic
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        // 環境変数からのトークンがある場合、まずはそれを試す
-        // ただし、ユーザー独自のfirebaseConfigを使っている場合はトークン不一致で失敗するため、
-        // その場合はcatchして匿名認証にフォールバックする
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          try {
-            await signInWithCustomToken(auth, __initial_auth_token);
-            return; // 成功したら終了
-          } catch (tokenError) {
-            console.warn("Custom token auth failed (likely config mismatch), falling back to anonymous auth.");
-          }
-        }
-        
-        // トークンがない、またはトークン認証に失敗した場合は匿名認証を行う
-        await signInAnonymously(auth);
-      } catch (error) {
-        console.error("Auth failed:", error);
+    // メールリンク認証のコールバック処理
+    if (isSignInWithEmailLink(auth, window.location.href)) {
+      let email = window.localStorage.getItem('emailForSignIn');
+      if (!email) {
+        email = window.prompt('確認のため、メールアドレスをもう一度入力してください');
       }
-    };
-    initAuth();
+      
+      if (email) {
+        signInWithEmailLink(auth, email, window.location.href)
+          .then(() => {
+            window.localStorage.removeItem('emailForSignIn');
+            window.history.replaceState({}, document.title, window.location.pathname);
+          })
+          .catch((error) => {
+            console.error("Link sign-in error:", error);
+            alert("ログインに失敗しました。リンクの有効期限が切れている可能性があります。");
+          });
+      }
+    }
 
+    // 認証状態の監視
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthLoading(false);
       if (!u) {
         setMyProfile(null);
-        setEnteredEmail('');
       }
     });
     return () => unsubscribe();
   }, []);
 
-  // 2. Data Fetching (Profiles & Messages) - Only when logged in
+  // 2. Data Fetching
   useEffect(() => {
     if (!user) return;
 
@@ -565,11 +653,11 @@ export default function App() {
       if (docSnap.exists()) {
         setMyProfile(docSnap.data());
       } else {
-        setMyProfile(null);
+        setMyProfile(null); // Profile doesn't exist yet -> trigger Onboarding
       }
     });
 
-    // Fetch All Profiles (Public)
+    // Fetch All Profiles
     const qProfiles = query(collection(db, 'artifacts', appId, 'public', 'data', 'profiles'));
     const unsubProfiles = onSnapshot(qProfiles, (snapshot) => {
       const profiles = [];
@@ -579,7 +667,7 @@ export default function App() {
       setAllProfiles(profiles);
     });
 
-    // Fetch All Messages
+    // Fetch Messages
     const qMessages = query(collection(db, 'artifacts', appId, 'public', 'data', 'messages'));
     const unsubMessages = onSnapshot(qMessages, (snapshot) => {
       const msgs = [];
@@ -596,47 +684,42 @@ export default function App() {
     };
   }, [user]);
 
-  // Handle fake logout
   const handleLogout = async () => {
-    setEnteredEmail('');
     await signOut(auth);
-    // Note: signOut in anon auth kills session. Re-auth will create new UID typically or restore if session persists.
-    // In this demo, to ensure "Logout" feels real, we might trigger a re-init.
-    window.location.reload(); // Simplest way to reset the anon session state visually
+    setActiveTab('home');
   };
 
-  // Views Logic
+  // Rendering Flow
   if (authLoading) return <div className="flex h-screen items-center justify-center text-rose-500">Loading...</div>;
 
-  // Flow Logic:
-  // 1. Auth Init is done. User exists (Anon).
-  // 2. Check if Profile exists. 
-  //    - Yes: Show Home.
-  //    - No: 
-  //      - If user hasn't entered email yet: Show AuthScreen.
-  //      - If user entered email: Show Onboarding.
+  // 1. Not Logged In
+  if (!user) {
+    return <AuthScreen />;
+  }
 
+  // 2. Logged In but No Profile
   if (!myProfile && !isEditing) {
-    if (!enteredEmail) {
-      return <AuthScreen onComplete={(email) => setEnteredEmail(email)} />;
-    }
     return (
       <Onboarding 
         user={user} 
-        initialEmail={enteredEmail}
-        onComplete={() => setMyProfile({})} // Optimistic update handled by snapshot
+        onComplete={() => setMyProfile({})} // Optimistic update
       />
     );
   }
 
+  // 3. Profile Editing
   if (isEditing) {
-    return <div className="relative">
-        <button onClick={() => setIsEditing(false)} className="absolute top-4 left-4 z-10 p-2 bg-gray-200 rounded-full"><ArrowLeft size={20}/></button>
+    return (
+      <div className="relative">
+        <button onClick={() => setIsEditing(false)} className="absolute top-4 left-4 z-10 p-2 bg-gray-200 rounded-full">
+          <ArrowLeft size={20}/>
+        </button>
         <Onboarding user={user} onComplete={() => setIsEditing(false)} />
-    </div>
+      </div>
+    );
   }
 
-  // Chat View Overlay
+  // 4. Chat Overlay
   if (chatTarget) {
     return (
       <MessageDetail 
@@ -648,6 +731,7 @@ export default function App() {
     );
   }
 
+  // 5. Main Content
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
@@ -704,7 +788,6 @@ export default function App() {
         >
           <MessageCircle size={24} />
           <span className="text-[10px] font-medium">メッセージ</span>
-          {/* Unread badge simulation */}
           {allMessages.some(m => m.to === user.uid && !m.read && m.from !== user.uid) && (
              <span className="absolute top-0 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
           )}
@@ -714,9 +797,11 @@ export default function App() {
           className={`flex flex-col items-center gap-1 ${activeTab === 'profile' ? 'text-rose-500' : 'text-gray-400'}`}
         >
           <div className="w-6 h-6 rounded-full bg-gray-200 overflow-hidden">
-             <div className={`w-full h-full ${myProfile.avatarColor} flex items-center justify-center text-[10px]`}>
-               {myProfile.displayName?.[0]}
-             </div>
+             {myProfile?.avatarColor && (
+               <div className={`w-full h-full ${myProfile.avatarColor} flex items-center justify-center text-[10px]`}>
+                 {myProfile.displayName?.[0]}
+               </div>
+             )}
           </div>
           <span className="text-[10px] font-medium">マイページ</span>
         </button>
