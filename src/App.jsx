@@ -7,7 +7,7 @@ import {
   signInWithEmailLink,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  updatePassword, // パスワード更新用
+  updatePassword,
   signOut,
   onAuthStateChanged
 } from 'firebase/auth';
@@ -21,7 +21,13 @@ import {
   query,
   serverTimestamp
 } from 'firebase/firestore';
-import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound } from 'lucide-react';
+import { 
+  getStorage, 
+  ref, 
+  uploadBytes, 
+  getDownloadURL 
+} from 'firebase/storage';
+import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon } from 'lucide-react';
 
 // --- Firebase Initialization ---
 
@@ -39,6 +45,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app); // Storage初期化
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- Constants & Helpers ---
@@ -52,21 +59,32 @@ const PREFECTURES = [
   "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県"
 ];
 
-const AVATAR_COLORS = [
-  "bg-red-200", "bg-blue-200", "bg-green-200", "bg-yellow-200",
-  "bg-purple-200", "bg-pink-200", "bg-indigo-200", "bg-orange-200"
-];
+// 共通アバターコンポーネント (画像があれば画像、なければイニシャル表示)
+const UserAvatar = ({ user, className = "w-12 h-12", textSize = "text-lg" }) => {
+  if (user?.photoURL) {
+    return (
+      <img 
+        src={user.photoURL} 
+        alt={user.displayName} 
+        className={`${className} rounded-full object-cover border border-gray-200`} 
+      />
+    );
+  }
+  return (
+    <div className={`${className} rounded-full bg-gray-200 flex items-center justify-center ${textSize} font-bold text-gray-500`}>
+      {user?.displayName?.[0] || <User size={20} />}
+    </div>
+  );
+};
 
 // --- Components ---
 
-// 1. Auth Screen (Login & Register Request)
+// 1. Auth Screen
 const AuthScreen = () => {
-  const [authMethod, setAuthMethod] = useState('link'); // 'link' (Register) or 'password' (Login)
-  const [isRegister, setIsRegister] = useState(false); // For Password mode toggle
-  
+  const [authMethod, setAuthMethod] = useState('link');
+  const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  
   const [loading, setLoading] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
   const [error, setError] = useState('');
@@ -78,22 +96,17 @@ const AuthScreen = () => {
 
     try {
       if (authMethod === 'link') {
-        // --- メールリンク認証（新規登録用） ---
         const actionCodeSettings = {
-          url: window.location.href, // 認証後に戻ってくるURL
+          url: window.location.href,
           handleCodeInApp: true,
         };
         await sendSignInLinkToEmail(auth, email, actionCodeSettings);
         window.localStorage.setItem('emailForSignIn', email);
         setLinkSent(true);
-
       } else {
-        // --- パスワード認証（ログイン用） ---
         if (isRegister) {
-          // パスワードでの新規登録も許可する場合
           await createUserWithEmailAndPassword(auth, email, password);
         } else {
-          // 通常のログイン
           await signInWithEmailAndPassword(auth, email, password);
         }
       }
@@ -110,7 +123,6 @@ const AuthScreen = () => {
     }
   };
 
-  // 認証メール送信完了画面
   if (linkSent) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-pink-500 to-rose-400 p-4">
@@ -121,8 +133,7 @@ const AuthScreen = () => {
           <h2 className="text-xl font-bold text-gray-800 mb-4">認証メールを送信しました</h2>
           <p className="text-gray-600 mb-6">
             <strong>{email}</strong> 宛に本登録用のメールを送信しました。<br />
-            記載されているURLをクリックして、<br/>
-            <strong>パスワード設定</strong>と<strong>プロフィール登録</strong>へ進んでください。
+            URLをクリックして、パスワード設定とプロフィール登録へ進んでください。
           </p>
           <button 
             onClick={() => setLinkSent(false)}
@@ -144,10 +155,9 @@ const AuthScreen = () => {
           </div>
         </div>
         <h1 className="text-2xl font-bold text-center text-gray-800 mb-2">
-          MatchApp
+          MatchAppへようこそ
         </h1>
         
-        {/* 認証方法の切り替えタブ */}
         <div className="flex border-b mb-6 mt-4">
           <button
             className={`flex-1 pb-2 text-sm font-medium flex items-center justify-center gap-2 ${authMethod === 'link' ? 'text-rose-500 border-b-2 border-rose-500' : 'text-gray-400'}`}
@@ -210,8 +220,7 @@ const AuthScreen = () => {
 
         {authMethod === 'link' && (
           <p className="text-xs text-center text-gray-400 mt-4">
-            入力されたメールアドレスに本登録用のURLを送信します。<br/>
-            URLをクリックすると、パスワード設定画面へ移動します。
+            メールアドレス宛にログイン用のリンクを送ります。
           </p>
         )}
 
@@ -230,7 +239,7 @@ const AuthScreen = () => {
   );
 };
 
-// 2. Password Setup Screen (認証リンククリック後に表示)
+// 2. Password Setup Screen
 const PasswordSetup = ({ user, onComplete }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -246,9 +255,8 @@ const PasswordSetup = ({ user, onComplete }) => {
     setError('');
     
     try {
-      // Firebase Authの現在のユーザーにパスワードを設定
       await updatePassword(user, password);
-      onComplete(); // 完了コールバック（Onboardingへ遷移）
+      onComplete();
     } catch (err) {
       console.error(err);
       setError('パスワードの設定に失敗しました。再度お試しください。');
@@ -267,7 +275,6 @@ const PasswordSetup = ({ user, onComplete }) => {
         </div>
         <h2 className="text-2xl font-bold text-center text-gray-800 mb-2">ログインパスワード設定</h2>
         <p className="text-center text-gray-500 mb-6 text-sm">
-          本登録ありがとうございます。<br/>
           次回以降のログインに使用するパスワードを設定してください。
         </p>
 
@@ -303,7 +310,7 @@ const PasswordSetup = ({ user, onComplete }) => {
   );
 };
 
-// 3. Onboarding (Initial Profile Setup)
+// 3. Onboarding (Image Upload Implementation)
 const Onboarding = ({ user, onComplete }) => {
   const [formData, setFormData] = useState({
     displayName: '',
@@ -311,16 +318,41 @@ const Onboarding = ({ user, onComplete }) => {
     gender: '未設定',
     prefecture: '東京都',
     bio: '',
-    avatarColor: AVATAR_COLORS[0]
   });
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // 画像選択時の処理
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImageFile(file);
+      // プレビュー表示
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
+      let photoURL = '';
+
+      // 画像がある場合、Storageにアップロード
+      if (imageFile) {
+        const storageRef = ref(storage, `profileImages/${user.uid}/${Date.now()}_${imageFile.name}`);
+        const snapshot = await uploadBytes(storageRef, imageFile);
+        photoURL = await getDownloadURL(snapshot.ref);
+      }
+
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', user.uid), {
         ...formData,
+        photoURL: photoURL, // 画像URLを保存
         uid: user.uid,
         email: user.email,
         createdAt: serverTimestamp(),
@@ -346,18 +378,29 @@ const Onboarding = ({ user, onComplete }) => {
         </div>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">アイコンカラー</label>
-            <div className="flex gap-2 justify-center flex-wrap">
-              {AVATAR_COLORS.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  onClick={() => setFormData({ ...formData, avatarColor: color })}
-                  className={`w-10 h-10 rounded-full ${color} ${formData.avatarColor === color ? 'ring-4 ring-rose-400' : ''}`}
+          
+          {/* Image Upload Area */}
+          <div className="flex flex-col items-center justify-center mb-6">
+            <div className="relative group">
+              <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
+                {imagePreview ? (
+                  <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <ImageIcon className="text-gray-400 w-12 h-12" />
+                )}
+              </div>
+              <label htmlFor="profile-image" className="absolute bottom-0 right-0 bg-rose-500 p-2 rounded-full cursor-pointer hover:bg-rose-600 transition shadow-md">
+                <Camera className="text-white w-5 h-5" />
+                <input 
+                  id="profile-image" 
+                  type="file" 
+                  accept="image/*" 
+                  className="hidden" 
+                  onChange={handleImageChange}
                 />
-              ))}
+              </label>
             </div>
+            <p className="text-xs text-gray-500 mt-2">プロフィール画像を設定</p>
           </div>
 
           <div>
@@ -437,7 +480,7 @@ const Onboarding = ({ user, onComplete }) => {
   );
 };
 
-// 4. Main App Components (Home, MessageDetail, MessagesList, Profile)
+// 4. Main App Components
 const Home = ({ profiles, onSelectUser }) => (
   <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
     {profiles.length === 0 ? (
@@ -447,11 +490,9 @@ const Home = ({ profiles, onSelectUser }) => (
     ) : (
       profiles.map((profile) => (
         <div key={profile.uid} className="bg-white rounded-xl shadow overflow-hidden flex flex-col">
-          <div className={`h-24 ${profile.avatarColor || 'bg-gray-200'} relative`}>
+          <div className="h-24 bg-rose-100 relative">
             <div className="absolute -bottom-6 left-4 bg-white p-1 rounded-full">
-              <div className={`w-16 h-16 rounded-full ${profile.avatarColor || 'bg-gray-300'} flex items-center justify-center text-2xl`}>
-                {profile.displayName?.[0]}
-              </div>
+              <UserAvatar user={profile} className="w-16 h-16" textSize="text-2xl" />
             </div>
           </div>
           <div className="pt-8 px-4 pb-4 flex-grow">
@@ -514,9 +555,7 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
         <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full">
           <ArrowLeft size={24} className="text-gray-600" />
         </button>
-        <div className={`w-10 h-10 rounded-full ${targetUser.avatarColor} flex items-center justify-center text-gray-700 font-bold`}>
-          {targetUser.displayName?.[0]}
-        </div>
+        <UserAvatar user={targetUser} className="w-10 h-10" />
         <div>
           <h3 className="font-bold text-gray-800">{targetUser.displayName}</h3>
           <p className="text-xs text-gray-500">{targetUser.prefecture}</p>
@@ -603,9 +642,7 @@ const MessagesList = ({ currentUser, messages, profiles, onSelectChat }) => {
               onClick={() => onSelectChat(user)}
               className="px-4 py-3 hover:bg-gray-50 cursor-pointer flex items-center gap-3"
             >
-              <div className={`w-12 h-12 rounded-full ${user.avatarColor} flex-shrink-0 flex items-center justify-center text-lg font-bold text-gray-700`}>
-                {user.displayName?.[0]}
-              </div>
+              <UserAvatar user={user} className="w-12 h-12 flex-shrink-0" />
               <div className="flex-grow min-w-0">
                 <div className="flex justify-between items-baseline mb-1">
                   <h3 className="font-bold text-gray-800 truncate">{user.displayName}</h3>
@@ -631,14 +668,14 @@ const Profile = ({ profile, isSelf, onEdit, onLogout }) => {
 
   return (
     <div className="pb-20 bg-gray-50 min-h-screen">
-      <div className={`h-32 ${profile.avatarColor || 'bg-gray-300'}`}></div>
+      <div className="h-32 bg-rose-200"></div>
       <div className="px-4 -mt-10 mb-4">
         <div className="flex justify-between items-end">
-          <div className={`w-24 h-24 rounded-full border-4 border-white ${profile.avatarColor || 'bg-gray-300'} flex items-center justify-center text-4xl shadow-md`}>
-            {profile.displayName?.[0]}
+          <div className="p-1 bg-white rounded-full">
+            <UserAvatar user={profile} className="w-24 h-24" textSize="text-4xl" />
           </div>
           {isSelf && (
-            <button onClick={onEdit} className="bg-white border text-gray-700 px-4 py-1.5 rounded-full text-sm font-medium hover:bg-gray-50 flex items-center gap-2">
+            <button onClick={onEdit} className="bg-white border text-gray-700 px-4 py-1.5 rounded-full text-sm font-medium hover:bg-gray-50 flex items-center gap-2 shadow-sm">
               <Edit2 size={14} /> 編集
             </button>
           )}
@@ -684,39 +721,34 @@ export default function App() {
   const [allMessages, setAllMessages] = useState([]);
   const [chatTarget, setChatTarget] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [requirePasswordSetup, setRequirePasswordSetup] = useState(false); // パスワード設定が必要かどうかの状態
+  const [requirePasswordSetup, setRequirePasswordSetup] = useState(false);
 
   // 1. Authentication Logic
   useEffect(() => {
-    // メールリンク認証のコールバック処理
-    if (isSignInWithEmailLink(auth, window.location.href)) {
-      let email = window.localStorage.getItem('emailForSignIn');
-      if (!email) {
-        // 同じデバイス/ブラウザでない場合、ユーザーに入力を求める
-        email = window.prompt('確認のため、メールアドレスをもう一度入力してください');
-      }
-      
-      if (email) {
-        signInWithEmailLink(auth, email, window.location.href)
-          .then((result) => {
-            // サインイン成功
+    const handleAuth = async () => {
+      if (isSignInWithEmailLink(auth, window.location.href)) {
+        let email = window.localStorage.getItem('emailForSignIn');
+        if (!email) {
+          email = window.prompt('確認のため、メールアドレスをもう一度入力してください');
+        }
+        
+        if (email) {
+          try {
+            await signInWithEmailLink(auth, email, window.location.href);
             window.localStorage.removeItem('emailForSignIn');
-            // URLパラメータをクリア
             window.history.replaceState({}, document.title, window.location.pathname);
             
-            // 重要: リンク認証後、特に新規ユーザーの場合はパスワード設定を強制する
-            if (result.additionalUserInfo?.isNewUser) {
-              setRequirePasswordSetup(true);
-            }
-          })
-          .catch((error) => {
+            // リンク認証時は常にパスワード設定フローへ
+            setRequirePasswordSetup(true);
+          } catch (error) {
             console.error("Link sign-in error:", error);
-            alert("ログインに失敗しました。リンクの有効期限が切れているか、既に使用済みです。");
-          });
+            alert("ログインに失敗しました。リンクの有効期限が切れている可能性があります。");
+          }
+        }
       }
-    }
+    };
+    handleAuth();
 
-    // 認証状態の監視
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthLoading(false);
@@ -732,16 +764,15 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    // Fetch My Profile
     const unsubMyProfile = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', user.uid), (docSnap) => {
       if (docSnap.exists()) {
         setMyProfile(docSnap.data());
+        setRequirePasswordSetup(false);
       } else {
-        setMyProfile(null); // Profile doesn't exist yet -> will trigger Onboarding (after password setup)
+        setMyProfile(null);
       }
     });
 
-    // Fetch All Profiles
     const qProfiles = query(collection(db, 'artifacts', appId, 'public', 'data', 'profiles'));
     const unsubProfiles = onSnapshot(qProfiles, (snapshot) => {
       const profiles = [];
@@ -751,7 +782,6 @@ export default function App() {
       setAllProfiles(profiles);
     });
 
-    // Fetch Messages
     const qMessages = query(collection(db, 'artifacts', appId, 'public', 'data', 'messages'));
     const unsubMessages = onSnapshot(qMessages, (snapshot) => {
       const msgs = [];
@@ -774,16 +804,13 @@ export default function App() {
     setRequirePasswordSetup(false);
   };
 
-  // Rendering Flow
   if (authLoading) return <div className="flex h-screen items-center justify-center text-rose-500">Loading...</div>;
 
-  // 1. Not Logged In
   if (!user) {
     return <AuthScreen />;
   }
 
-  // 2. Logged In: Check if Password Setup is Required (New Step)
-  if (requirePasswordSetup) {
+  if (requirePasswordSetup && !myProfile) {
     return (
       <PasswordSetup 
         user={user} 
@@ -792,17 +819,15 @@ export default function App() {
     );
   }
 
-  // 3. Logged In but No Profile (After Password Setup)
   if (!myProfile && !isEditing) {
     return (
       <Onboarding 
         user={user} 
-        onComplete={() => setMyProfile({})} // Optimistic update
+        onComplete={() => setMyProfile({})}
       />
     );
   }
 
-  // 4. Profile Editing
   if (isEditing) {
     return (
       <div className="relative">
@@ -814,7 +839,6 @@ export default function App() {
     );
   }
 
-  // 5. Chat Overlay
   if (chatTarget) {
     return (
       <MessageDetail 
@@ -826,7 +850,6 @@ export default function App() {
     );
   }
 
-  // 6. Main Content
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
@@ -856,19 +879,14 @@ export default function App() {
 
   return (
     <div className="bg-gray-100 min-h-screen max-w-md mx-auto shadow-2xl relative bg-white">
-      {/* Header */}
       <header className="sticky top-0 bg-white/90 backdrop-blur-sm z-10 px-4 py-3 flex items-center justify-between border-b">
         <h1 className="text-xl font-bold text-rose-500 flex items-center gap-1">
           <Heart className="fill-current" size={24} /> MatchApp
         </h1>
       </header>
-
-      {/* Main Content */}
       <main className="min-h-screen bg-white">
         {renderContent()}
       </main>
-
-      {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t py-2 px-6 flex justify-between items-center z-20">
         <button 
           onClick={() => setActiveTab('home')}
@@ -892,11 +910,7 @@ export default function App() {
           className={`flex flex-col items-center gap-1 ${activeTab === 'profile' ? 'text-rose-500' : 'text-gray-400'}`}
         >
           <div className="w-6 h-6 rounded-full bg-gray-200 overflow-hidden">
-             {myProfile?.avatarColor && (
-               <div className={`w-full h-full ${myProfile.avatarColor} flex items-center justify-center text-[10px]`}>
-                 {myProfile.displayName?.[0]}
-               </div>
-             )}
+             <UserAvatar user={myProfile} className="w-full h-full" textSize="text-[10px]" />
           </div>
           <span className="text-[10px] font-medium">マイページ</span>
         </button>
