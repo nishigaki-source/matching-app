@@ -16,11 +16,13 @@ import {
   collection,
   doc,
   setDoc,
-  updateDoc, // 追加
+  updateDoc,
   addDoc,
   onSnapshot,
   query,
-  serverTimestamp
+  serverTimestamp,
+  where,
+  getDocs
 } from 'firebase/firestore';
 import { 
   getStorage, 
@@ -28,7 +30,7 @@ import {
   uploadBytes, 
   getDownloadURL 
 } from 'firebase/storage';
-import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2, Search, Filter, X, ThumbsUp, XCircle, Check } from 'lucide-react';
+import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2, Search, Filter, X, ThumbsUp, XCircle, Check, UserX } from 'lucide-react';
 
 // --- Firebase Initialization ---
 
@@ -832,7 +834,7 @@ const LikesList = ({ currentUser, likes, profiles, onAnswer }) => {
   );
 };
 
-const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
+const MessageDetail = ({ currentUser, targetUser, onClose, messages, onUnmatch }) => {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
 
@@ -864,6 +866,12 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
     }
   };
 
+  const confirmUnmatch = () => {
+    if (window.confirm("本当にマッチングを解除しますか？\n相手とのメッセージは全て見られなくなり、元に戻すことはできません。")) {
+      onUnmatch(targetUser.uid);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-white z-50 flex flex-col">
       <div className="bg-white border-b px-4 py-3 flex items-center gap-3 shadow-sm">
@@ -871,10 +879,17 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
           <ArrowLeft size={24} className="text-gray-600" />
         </button>
         <UserAvatar user={targetUser} className="w-10 h-10" />
-        <div>
+        <div className="flex-grow">
           <h3 className="font-bold text-gray-800">{targetUser.displayName}</h3>
           <p className="text-xs text-gray-500">{targetUser.prefecture}</p>
         </div>
+        <button 
+          onClick={confirmUnmatch}
+          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition"
+          title="さようなら（マッチング解除）"
+        >
+          <UserX size={20} />
+        </button>
       </div>
 
       <div className="flex-grow overflow-y-auto p-4 bg-gray-50 space-y-3">
@@ -932,7 +947,6 @@ const MessagesList = ({ currentUser, matches, profiles, onSelectChat }) => {
       <h2 className="px-4 py-3 text-lg font-bold text-gray-800 border-b">メッセージ</h2>
       <div className="divide-y">
         {matches.map((match) => {
-          // match data contains from/to/status. Find the OTHER user.
           const otherUid = match.from === currentUser.uid ? match.to : match.from;
           const user = profiles.find(p => p.uid === otherUid);
           if (!user) return null;
@@ -976,7 +990,6 @@ const Profile = ({ profile, isSelf, onEdit, onLogout, onClose, onLike }) => {
 
   return (
     <div className="pb-20 bg-gray-50 min-h-screen relative">
-      {/* Close Button for Other Profiles */}
       {!isSelf && onClose && (
         <button 
           onClick={onClose} 
@@ -1039,7 +1052,6 @@ const Profile = ({ profile, isSelf, onEdit, onLogout, onClose, onLike }) => {
         )}
       </div>
 
-      {/* Like Message Modal */}
       {isLikeModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-fade-in-up">
@@ -1084,7 +1096,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [allProfiles, setAllProfiles] = useState([]);
   const [allMessages, setAllMessages] = useState([]);
-  const [interactions, setInteractions] = useState([]); // Like/Match Status
+  const [interactions, setInteractions] = useState([]);
   const [chatTarget, setChatTarget] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [requirePasswordSetup, setRequirePasswordSetup] = useState(false);
@@ -1129,7 +1141,6 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    // Fetch My Profile
     const unsubMyProfile = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', user.uid), (docSnap) => {
       if (docSnap.exists()) {
         setMyProfile(docSnap.data());
@@ -1139,7 +1150,6 @@ export default function App() {
       }
     });
 
-    // Fetch All Profiles
     const qProfiles = query(collection(db, 'artifacts', appId, 'public', 'data', 'profiles'));
     const unsubProfiles = onSnapshot(qProfiles, (snapshot) => {
       const profiles = [];
@@ -1149,7 +1159,6 @@ export default function App() {
       setAllProfiles(profiles);
     });
 
-    // Fetch All Messages
     const qMessages = query(collection(db, 'artifacts', appId, 'public', 'data', 'messages'));
     const unsubMessages = onSnapshot(qMessages, (snapshot) => {
       const msgs = [];
@@ -1159,13 +1168,11 @@ export default function App() {
       setAllMessages(msgs);
     });
 
-    // Fetch Interactions (Likes, Matches)
     const qInteractions = query(collection(db, 'artifacts', appId, 'public', 'data', 'interactions'));
     const unsubInteractions = onSnapshot(qInteractions, (snapshot) => {
       const inters = [];
       snapshot.forEach(doc => {
         const data = doc.data();
-        // Only keep interactions involving me
         if (data.from === user.uid || data.to === user.uid) {
           inters.push({ id: doc.id, ...data });
         }
@@ -1187,47 +1194,30 @@ export default function App() {
     setRequirePasswordSetup(false);
   };
 
-  // State Reset when Tab Changes
   useEffect(() => {
     setViewingProfile(null);
     setChatTarget(null);
     setIsEditing(false);
   }, [activeTab]);
 
-  // --- Logic Helpers ---
-
-  // Filter profiles for Home: Exclude anyone I have interacted with (liked, matched, rejected)
   const homeProfiles = useMemo(() => {
     return allProfiles.filter(p => {
-      // Check if any interaction exists between me and this person
-      const hasInteraction = interactions.some(i => 
-        (i.from === user?.uid && i.to === p.uid) || 
-        (i.from === p.uid && i.to === user?.uid && i.status !== 'pending') // Hide if I rejected/matched them. If they liked me (pending), maybe don't show in Home, show in Likes tab?
-        // Let's hide anyone who has sent me a like from Home, forcing me to check Likes tab.
-        // Actually, simple rule: remove anyone involved in ANY interaction id pair.
-      );
-      // More strict: if there is an interaction, don't show in Home.
       const exists = interactions.some(i => (i.from === user?.uid && i.to === p.uid) || (i.from === p.uid && i.to === user?.uid));
       return !exists;
     });
   }, [allProfiles, interactions, user]);
 
-  // Incoming Likes: Status pending, To me
   const incomingLikes = useMemo(() => {
     return interactions.filter(i => i.to === user?.uid && i.status === 'pending');
   }, [interactions, user]);
 
-  // Matches: Status matched
   const myMatches = useMemo(() => {
     return interactions.filter(i => i.status === 'matched');
   }, [interactions]);
 
-
-  // Action Handlers
   const sendLike = async (targetProfile, message) => {
     if (!user) return;
     try {
-      // Create interaction
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'interactions'), {
         from: user.uid,
         to: targetProfile.uid,
@@ -1237,7 +1227,7 @@ export default function App() {
         createdAt: serverTimestamp()
       });
       alert('いいねを送りました！');
-      setViewingProfile(null); // Close profile view
+      setViewingProfile(null);
     } catch (e) {
       console.error(e);
       alert('エラーが発生しました');
@@ -1249,8 +1239,6 @@ export default function App() {
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'interactions', interaction.id);
       if (isYes) {
         await updateDoc(docRef, { status: 'matched' });
-        
-        // Add the initial message to chat history if exists
         if (interaction.message) {
            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'messages'), {
             from: interaction.from,
@@ -1269,8 +1257,25 @@ export default function App() {
     }
   };
 
+  const handleUnmatch = async (targetUid) => {
+    // Find interaction between current user and targetUid
+    const interaction = interactions.find(i => 
+      (i.from === user.uid && i.to === targetUid) || 
+      (i.from === targetUid && i.to === user.uid)
+    );
 
-  // --- Render ---
+    if (interaction) {
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'interactions', interaction.id);
+        await updateDoc(docRef, { status: 'rejected' }); // Or 'goodbye' status
+        setChatTarget(null); // Close chat
+        alert("マッチングを解除しました。");
+      } catch (e) {
+        console.error("Unmatch error:", e);
+        alert("解除に失敗しました。");
+      }
+    }
+  };
 
   if (authLoading) return <div className="flex h-screen items-center justify-center text-rose-500">Loading...</div>;
 
@@ -1291,7 +1296,6 @@ export default function App() {
     );
   }
 
-  // View Other User
   if (viewingProfile) {
     return (
       <Profile 
@@ -1309,7 +1313,8 @@ export default function App() {
         currentUser={user} 
         targetUser={chatTarget} 
         messages={allMessages} 
-        onClose={() => setChatTarget(null)} 
+        onClose={() => setChatTarget(null)}
+        onUnmatch={handleUnmatch}
       />
     );
   }
@@ -1321,7 +1326,7 @@ export default function App() {
           <Home 
             profiles={homeProfiles} 
             onViewProfile={(u) => setViewingProfile(u)}
-            onSelectUser={() => {}} // Homeからは直接チャット不可
+            onSelectUser={() => {}} 
           />
         );
       case 'likes':
