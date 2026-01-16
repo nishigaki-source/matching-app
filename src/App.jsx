@@ -27,7 +27,7 @@ import {
   uploadBytes, 
   getDownloadURL 
 } from 'firebase/storage';
-import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon } from 'lucide-react';
+import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2 } from 'lucide-react';
 
 // --- Firebase Initialization ---
 
@@ -45,7 +45,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const storage = getStorage(app); // Storage初期化
+const storage = getStorage(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- Constants & Helpers ---
@@ -59,19 +59,18 @@ const PREFECTURES = [
   "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県"
 ];
 
-// 共通アバターコンポーネント (画像があれば画像、なければイニシャル表示)
 const UserAvatar = ({ user, className = "w-12 h-12", textSize = "text-lg" }) => {
   if (user?.photoURL) {
     return (
       <img 
         src={user.photoURL} 
         alt={user.displayName} 
-        className={`${className} rounded-full object-cover border border-gray-200`} 
+        className={`${className} rounded-full object-cover border border-gray-200 bg-white`} 
       />
     );
   }
   return (
-    <div className={`${className} rounded-full bg-gray-200 flex items-center justify-center ${textSize} font-bold text-gray-500`}>
+    <div className={`${className} rounded-full bg-gray-200 flex items-center justify-center ${textSize} font-bold text-gray-500 border border-gray-100`}>
       {user?.displayName?.[0] || <User size={20} />}
     </div>
   );
@@ -132,7 +131,7 @@ const AuthScreen = () => {
           </div>
           <h2 className="text-xl font-bold text-gray-800 mb-4">認証メールを送信しました</h2>
           <p className="text-gray-600 mb-6">
-            <strong>{email}</strong> 宛に本登録用のメールを送信しました。<br />
+            <strong>{email}</strong> 宛にメールを送信しました。<br />
             URLをクリックして、パスワード設定とプロフィール登録へ進んでください。
           </p>
           <button 
@@ -310,29 +309,33 @@ const PasswordSetup = ({ user, onComplete }) => {
   );
 };
 
-// 3. Onboarding (Image Upload Implementation)
-const Onboarding = ({ user, onComplete }) => {
+// 3. Onboarding (Enhanced with Cover Image)
+const Onboarding = ({ user, onComplete, initialData }) => {
   const [formData, setFormData] = useState({
-    displayName: '',
-    age: '20',
-    gender: '未設定',
-    prefecture: '東京都',
-    bio: '',
+    displayName: initialData?.displayName || '',
+    age: initialData?.age || '20',
+    gender: initialData?.gender || '未設定',
+    prefecture: initialData?.prefecture || '東京都',
+    bio: initialData?.bio || '',
   });
+  
+  // Profile Image
   const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [imagePreview, setImagePreview] = useState(initialData?.photoURL || null);
+
+  // Cover Image
+  const [coverFile, setCoverFile] = useState(null);
+  const [coverPreview, setCoverPreview] = useState(initialData?.coverPhotoURL || null);
+
   const [loading, setLoading] = useState(false);
 
-  // 画像選択時の処理
-  const handleImageChange = (e) => {
+  // Generic Image Handler
+  const handleImageChange = (e, setFile, setPreview) => {
     const file = e.target.files[0];
     if (file) {
-      setImageFile(file);
-      // プレビュー表示
+      setFile(file);
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-      };
+      reader.onloadend = () => setPreview(reader.result);
       reader.readAsDataURL(file);
     }
   };
@@ -341,21 +344,30 @@ const Onboarding = ({ user, onComplete }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      let photoURL = '';
+      let photoURL = initialData?.photoURL || '';
+      let coverPhotoURL = initialData?.coverPhotoURL || '';
 
-      // 画像がある場合、Storageにアップロード
+      // Upload Profile Image
       if (imageFile) {
         const storageRef = ref(storage, `profileImages/${user.uid}/${Date.now()}_${imageFile.name}`);
         const snapshot = await uploadBytes(storageRef, imageFile);
         photoURL = await getDownloadURL(snapshot.ref);
       }
 
+      // Upload Cover Image
+      if (coverFile) {
+        const storageRef = ref(storage, `coverImages/${user.uid}/${Date.now()}_${coverFile.name}`);
+        const snapshot = await uploadBytes(storageRef, coverFile);
+        coverPhotoURL = await getDownloadURL(snapshot.ref);
+      }
+
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', user.uid), {
         ...formData,
-        photoURL: photoURL, // 画像URLを保存
+        photoURL,
+        coverPhotoURL,
         uid: user.uid,
         email: user.email,
-        createdAt: serverTimestamp(),
+        createdAt: initialData?.createdAt || serverTimestamp(),
         updatedAt: serverTimestamp()
       });
       onComplete();
@@ -371,100 +383,127 @@ const Onboarding = ({ user, onComplete }) => {
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-lg p-6 rounded-xl shadow-lg">
         <div className="text-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">プロフィール作成</h2>
+          <h2 className="text-2xl font-bold text-gray-800">プロフィール編集</h2>
           <p className="text-sm text-gray-500 mt-1">
-            利用を開始するためにユーザー情報を登録してください
+            あなたの魅力を伝えましょう
           </p>
         </div>
         
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-6">
           
-          {/* Image Upload Area */}
-          <div className="flex flex-col items-center justify-center mb-6">
-            <div className="relative group">
-              <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
-                {imagePreview ? (
-                  <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                ) : (
-                  <ImageIcon className="text-gray-400 w-12 h-12" />
-                )}
-              </div>
-              <label htmlFor="profile-image" className="absolute bottom-0 right-0 bg-rose-500 p-2 rounded-full cursor-pointer hover:bg-rose-600 transition shadow-md">
-                <Camera className="text-white w-5 h-5" />
+          {/* Cover & Profile Image Area */}
+          <div className="relative mb-12">
+            {/* Cover Image */}
+            <div className="h-32 bg-gray-200 rounded-lg overflow-hidden relative group">
+              {coverPreview ? (
+                <img src={coverPreview} alt="Cover Preview" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  <ImageIcon2 className="w-8 h-8" />
+                </div>
+              )}
+              <label htmlFor="cover-image" className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer">
+                <div className="bg-white/80 p-2 rounded-full">
+                  <Camera className="w-5 h-5 text-gray-700" />
+                </div>
                 <input 
-                  id="profile-image" 
+                  id="cover-image" 
                   type="file" 
                   accept="image/*" 
                   className="hidden" 
-                  onChange={handleImageChange}
+                  onChange={(e) => handleImageChange(e, setCoverFile, setCoverPreview)}
                 />
               </label>
             </div>
-            <p className="text-xs text-gray-500 mt-2">プロフィール画像を設定</p>
+
+            {/* Profile Image (Overlay) */}
+            <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2">
+              <div className="relative group">
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-white border-4 border-white shadow-md flex items-center justify-center">
+                  {imagePreview ? (
+                    <img src={imagePreview} alt="Profile Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <ImageIcon className="text-gray-300 w-8 h-8" />
+                  )}
+                </div>
+                <label htmlFor="profile-image" className="absolute bottom-0 right-0 bg-rose-500 p-2 rounded-full cursor-pointer hover:bg-rose-600 transition shadow-sm border-2 border-white">
+                  <Camera className="text-white w-4 h-4" />
+                  <input 
+                    id="profile-image" 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={(e) => handleImageChange(e, setImageFile, setImagePreview)}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">ニックネーム</label>
-            <input
-              type="text"
-              required
-              className="w-full border rounded-lg p-2 focus:ring-rose-500"
-              value={formData.displayName}
-              onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-              placeholder="例: たろう"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4 pt-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">年齢</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">ニックネーム</label>
+              <input
+                type="text"
+                required
+                className="w-full border rounded-lg p-2 focus:ring-rose-500 focus:border-rose-500"
+                value={formData.displayName}
+                onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+                placeholder="例: たろう"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">年齢</label>
+                <select
+                  className="w-full border rounded-lg p-2"
+                  value={formData.age}
+                  onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                >
+                  {Array.from({ length: 80 }, (_, i) => i + 18).map(age => (
+                    <option key={age} value={age}>{age}歳</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">性別</label>
+                <select
+                  className="w-full border rounded-lg p-2"
+                  value={formData.gender}
+                  onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                >
+                  <option value="未設定">未設定</option>
+                  <option value="男性">男性</option>
+                  <option value="女性">女性</option>
+                  <option value="その他">その他</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">お住まいのエリア</label>
               <select
                 className="w-full border rounded-lg p-2"
-                value={formData.age}
-                onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                value={formData.prefecture}
+                onChange={(e) => setFormData({ ...formData, prefecture: e.target.value })}
               >
-                {Array.from({ length: 80 }, (_, i) => i + 18).map(age => (
-                  <option key={age} value={age}>{age}歳</option>
+                {PREFECTURES.map(pref => (
+                  <option key={pref} value={pref}>{pref}</option>
                 ))}
               </select>
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">性別</label>
-              <select
-                className="w-full border rounded-lg p-2"
-                value={formData.gender}
-                onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-              >
-                <option value="未設定">未設定</option>
-                <option value="男性">男性</option>
-                <option value="女性">女性</option>
-                <option value="その他">その他</option>
-              </select>
+              <label className="block text-sm font-medium text-gray-700 mb-1">自己紹介</label>
+              <textarea
+                required
+                className="w-full border rounded-lg p-2 h-24"
+                value={formData.bio}
+                onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                placeholder="趣味や休日の過ごし方など..."
+              />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">お住まいのエリア</label>
-            <select
-              className="w-full border rounded-lg p-2"
-              value={formData.prefecture}
-              onChange={(e) => setFormData({ ...formData, prefecture: e.target.value })}
-            >
-              {PREFECTURES.map(pref => (
-                <option key={pref} value={pref}>{pref}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">自己紹介</label>
-            <textarea
-              required
-              className="w-full border rounded-lg p-2 h-24"
-              value={formData.bio}
-              onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-              placeholder="趣味や休日の過ごし方など..."
-            />
           </div>
 
           <button
@@ -472,7 +511,7 @@ const Onboarding = ({ user, onComplete }) => {
             disabled={loading}
             className="w-full bg-rose-500 text-white font-bold py-3 rounded-lg hover:bg-rose-600 disabled:opacity-50"
           >
-            {loading ? '保存中...' : '利用を開始する'}
+            {loading ? '保存中...' : '保存してはじめる'}
           </button>
         </form>
       </div>
@@ -490,8 +529,13 @@ const Home = ({ profiles, onSelectUser }) => (
     ) : (
       profiles.map((profile) => (
         <div key={profile.uid} className="bg-white rounded-xl shadow overflow-hidden flex flex-col">
-          <div className="h-24 bg-rose-100 relative">
-            <div className="absolute -bottom-6 left-4 bg-white p-1 rounded-full">
+          <div className="h-24 bg-gray-200 relative">
+            {profile.coverPhotoURL ? (
+              <img src={profile.coverPhotoURL} alt="cover" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-rose-100" />
+            )}
+            <div className="absolute -bottom-6 left-4">
               <UserAvatar user={profile} className="w-16 h-16" textSize="text-2xl" />
             </div>
           </div>
@@ -668,10 +712,16 @@ const Profile = ({ profile, isSelf, onEdit, onLogout }) => {
 
   return (
     <div className="pb-20 bg-gray-50 min-h-screen">
-      <div className="h-32 bg-rose-200"></div>
+      <div className="h-32 bg-gray-200 relative overflow-hidden">
+        {profile.coverPhotoURL ? (
+          <img src={profile.coverPhotoURL} alt="Cover" className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full bg-rose-200" />
+        )}
+      </div>
       <div className="px-4 -mt-10 mb-4">
         <div className="flex justify-between items-end">
-          <div className="p-1 bg-white rounded-full">
+          <div className="p-1 bg-white rounded-full relative z-10">
             <UserAvatar user={profile} className="w-24 h-24" textSize="text-4xl" />
           </div>
           {isSelf && (
@@ -737,8 +787,6 @@ export default function App() {
             await signInWithEmailLink(auth, email, window.location.href);
             window.localStorage.removeItem('emailForSignIn');
             window.history.replaceState({}, document.title, window.location.pathname);
-            
-            // リンク認証時は常にパスワード設定フローへ
             setRequirePasswordSetup(true);
           } catch (error) {
             console.error("Link sign-in error:", error);
@@ -831,10 +879,11 @@ export default function App() {
   if (isEditing) {
     return (
       <div className="relative">
-        <button onClick={() => setIsEditing(false)} className="absolute top-4 left-4 z-10 p-2 bg-gray-200 rounded-full">
+        <button onClick={() => setIsEditing(false)} className="absolute top-4 left-4 z-10 p-2 bg-gray-200 rounded-full shadow-md">
           <ArrowLeft size={20}/>
         </button>
-        <Onboarding user={user} onComplete={() => setIsEditing(false)} />
+        {/* 編集時に既存データを渡す */}
+        <Onboarding user={user} initialData={myProfile} onComplete={() => setIsEditing(false)} />
       </div>
     );
   }
