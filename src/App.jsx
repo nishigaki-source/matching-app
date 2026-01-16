@@ -27,7 +27,7 @@ import {
   uploadBytes, 
   getDownloadURL 
 } from 'firebase/storage';
-import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2 } from 'lucide-react';
+import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2, Search, Filter } from 'lucide-react';
 
 // --- Firebase Initialization ---
 
@@ -309,7 +309,7 @@ const PasswordSetup = ({ user, onComplete }) => {
   );
 };
 
-// 3. Onboarding (Enhanced with Cover Image)
+// 3. Onboarding
 const Onboarding = ({ user, onComplete, initialData }) => {
   const [formData, setFormData] = useState({
     displayName: initialData?.displayName || '',
@@ -319,17 +319,12 @@ const Onboarding = ({ user, onComplete, initialData }) => {
     bio: initialData?.bio || '',
   });
   
-  // Profile Image
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(initialData?.photoURL || null);
-
-  // Cover Image
   const [coverFile, setCoverFile] = useState(null);
   const [coverPreview, setCoverPreview] = useState(initialData?.coverPhotoURL || null);
-
   const [loading, setLoading] = useState(false);
 
-  // Generic Image Handler
   const handleImageChange = (e, setFile, setPreview) => {
     const file = e.target.files[0];
     if (file) {
@@ -347,14 +342,12 @@ const Onboarding = ({ user, onComplete, initialData }) => {
       let photoURL = initialData?.photoURL || '';
       let coverPhotoURL = initialData?.coverPhotoURL || '';
 
-      // Upload Profile Image
       if (imageFile) {
         const storageRef = ref(storage, `profileImages/${user.uid}/${Date.now()}_${imageFile.name}`);
         const snapshot = await uploadBytes(storageRef, imageFile);
         photoURL = await getDownloadURL(snapshot.ref);
       }
 
-      // Upload Cover Image
       if (coverFile) {
         const storageRef = ref(storage, `coverImages/${user.uid}/${Date.now()}_${coverFile.name}`);
         const snapshot = await uploadBytes(storageRef, coverFile);
@@ -391,9 +384,7 @@ const Onboarding = ({ user, onComplete, initialData }) => {
         
         <form onSubmit={handleSubmit} className="space-y-6">
           
-          {/* Cover & Profile Image Area */}
           <div className="relative mb-12">
-            {/* Cover Image */}
             <div className="h-32 bg-gray-200 rounded-lg overflow-hidden relative group">
               {coverPreview ? (
                 <img src={coverPreview} alt="Cover Preview" className="w-full h-full object-cover" />
@@ -416,7 +407,6 @@ const Onboarding = ({ user, onComplete, initialData }) => {
               </label>
             </div>
 
-            {/* Profile Image (Overlay) */}
             <div className="absolute -bottom-10 left-1/2 transform -translate-x-1/2">
               <div className="relative group">
                 <div className="w-24 h-24 rounded-full overflow-hidden bg-white border-4 border-white shadow-md flex items-center justify-center">
@@ -520,46 +510,156 @@ const Onboarding = ({ user, onComplete, initialData }) => {
 };
 
 // 4. Main App Components
-const Home = ({ profiles, onSelectUser }) => (
-  <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pb-20">
-    {profiles.length === 0 ? (
-      <div className="col-span-full text-center text-gray-500 py-10">
-        ユーザーが見つかりませんでした
+const Home = ({ profiles, onSelectUser }) => {
+  const [filterGender, setFilterGender] = useState('すべて');
+  const [filterPrefecture, setFilterPrefecture] = useState('すべて');
+  const [filterMinAge, setFilterMinAge] = useState('');
+  const [filterMaxAge, setFilterMaxAge] = useState('');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+
+  const filteredProfiles = useMemo(() => {
+    return profiles.filter(profile => {
+      // 性別フィルタ
+      if (filterGender !== 'すべて' && profile.gender !== filterGender) return false;
+      
+      // エリアフィルタ
+      if (filterPrefecture !== 'すべて' && profile.prefecture !== filterPrefecture) return false;
+
+      // 年齢フィルタ
+      const age = parseInt(profile.age, 10);
+      if (filterMinAge && age < parseInt(filterMinAge, 10)) return false;
+      if (filterMaxAge && age > parseInt(filterMaxAge, 10)) return false;
+
+      return true;
+    });
+  }, [profiles, filterGender, filterPrefecture, filterMinAge, filterMaxAge]);
+
+  return (
+    <div className="pb-20">
+      {/* 検索・絞り込みバー */}
+      <div className="bg-white sticky top-14 z-10 shadow-sm border-b">
+        <button 
+          onClick={() => setIsFilterOpen(!isFilterOpen)}
+          className="w-full flex items-center justify-between p-4 text-gray-700 hover:bg-gray-50 transition"
+        >
+          <div className="flex items-center gap-2">
+            <Search size={20} className="text-rose-500" />
+            <span className="font-bold text-sm">検索条件を変更する</span>
+          </div>
+          <Filter size={18} className={isFilterOpen ? "text-rose-500" : "text-gray-400"} />
+        </button>
+
+        {isFilterOpen && (
+          <div className="p-4 bg-gray-50 border-t space-y-4 animate-fade-in-down">
+            {/* 性別 */}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">性別</label>
+              <div className="flex gap-2">
+                {['すべて', '男性', '女性', 'その他'].map(g => (
+                  <button
+                    key={g}
+                    onClick={() => setFilterGender(g)}
+                    className={`px-3 py-1.5 text-sm rounded-full border ${filterGender === g ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-gray-700 border-gray-300'}`}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* エリア */}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">エリア</label>
+              <select 
+                className="w-full p-2 text-sm border rounded-lg bg-white"
+                value={filterPrefecture}
+                onChange={(e) => setFilterPrefecture(e.target.value)}
+              >
+                <option value="すべて">全国</option>
+                {PREFECTURES.map(pref => (
+                  <option key={pref} value={pref}>{pref}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 年齢 */}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">年齢</label>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="number" 
+                  placeholder="下限なし" 
+                  className="w-full p-2 text-sm border rounded-lg"
+                  value={filterMinAge}
+                  onChange={(e) => setFilterMinAge(e.target.value)}
+                />
+                <span className="text-gray-400">〜</span>
+                <input 
+                  type="number" 
+                  placeholder="上限なし" 
+                  className="w-full p-2 text-sm border rounded-lg"
+                  value={filterMaxAge}
+                  onChange={(e) => setFilterMaxAge(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-    ) : (
-      profiles.map((profile) => (
-        <div key={profile.uid} className="bg-white rounded-xl shadow overflow-hidden flex flex-col">
-          <div className="h-24 bg-gray-200 relative">
-            {profile.coverPhotoURL ? (
-              <img src={profile.coverPhotoURL} alt="cover" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full bg-rose-100" />
-            )}
-            <div className="absolute -bottom-6 left-4">
-              <UserAvatar user={profile} className="w-16 h-16" textSize="text-2xl" />
-            </div>
-          </div>
-          <div className="pt-8 px-4 pb-4 flex-grow">
-            <h3 className="text-lg font-bold text-gray-800">{profile.displayName}</h3>
-            <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
-              <span className="flex items-center gap-0.5"><MapPin size={14} /> {profile.prefecture}</span>
-              <span className="flex items-center gap-0.5"><User size={14} /> {profile.age}歳</span>
-            </div>
-            <p className="mt-3 text-sm text-gray-600 line-clamp-2">{profile.bio}</p>
-          </div>
-          <div className="px-4 pb-4">
-            <button
-              onClick={() => onSelectUser(profile)}
-              className="w-full bg-rose-50 text-rose-600 font-semibold py-2 rounded-lg hover:bg-rose-100 transition flex items-center justify-center gap-2"
+
+      <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredProfiles.length === 0 ? (
+          <div className="col-span-full py-12 text-center text-gray-500">
+            <Search className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+            <p>条件に一致するユーザーが見つかりませんでした</p>
+            <button 
+              onClick={() => {
+                setFilterGender('すべて');
+                setFilterPrefecture('すべて');
+                setFilterMinAge('');
+                setFilterMaxAge('');
+              }}
+              className="mt-4 text-rose-500 text-sm font-medium hover:underline"
             >
-              <Mail size={18} /> メッセージを送る
+              条件をリセットする
             </button>
           </div>
-        </div>
-      ))
-    )}
-  </div>
-);
+        ) : (
+          filteredProfiles.map((profile) => (
+            <div key={profile.uid} className="bg-white rounded-xl shadow overflow-hidden flex flex-col">
+              <div className="h-24 bg-gray-200 relative">
+                {profile.coverPhotoURL ? (
+                  <img src={profile.coverPhotoURL} alt="cover" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-rose-100" />
+                )}
+                <div className="absolute -bottom-6 left-4">
+                  <UserAvatar user={profile} className="w-16 h-16" textSize="text-2xl" />
+                </div>
+              </div>
+              <div className="pt-8 px-4 pb-4 flex-grow">
+                <h3 className="text-lg font-bold text-gray-800">{profile.displayName}</h3>
+                <div className="text-sm text-gray-500 flex items-center gap-2 mt-1">
+                  <span className="flex items-center gap-0.5"><MapPin size={14} /> {profile.prefecture}</span>
+                  <span className="flex items-center gap-0.5"><User size={14} /> {profile.age}歳</span>
+                </div>
+                <p className="mt-3 text-sm text-gray-600 line-clamp-2">{profile.bio}</p>
+              </div>
+              <div className="px-4 pb-4">
+                <button
+                  onClick={() => onSelectUser(profile)}
+                  className="w-full bg-rose-50 text-rose-600 font-semibold py-2 rounded-lg hover:bg-rose-100 transition flex items-center justify-center gap-2"
+                >
+                  <Mail size={18} /> メッセージを送る
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
 
 const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
   const [newMessage, setNewMessage] = useState('');
