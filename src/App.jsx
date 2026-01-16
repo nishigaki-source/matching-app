@@ -663,64 +663,107 @@ const Home = ({ profiles, onViewProfile }) => {
 
   return (
     <div className="pb-20">
+      {/* 検索・絞り込みバー */}
       <div className="bg-white sticky top-14 z-10 shadow-sm border-b">
         <button 
-          onClick={() => setIsFilterOpen(!isFilterOpen)}
+          onClick={() => setIsFilterOpen(true)}
           className="w-full flex items-center justify-between p-4 text-gray-700 hover:bg-gray-50 transition"
         >
           <div className="flex items-center gap-2">
             <Search size={20} className="text-rose-500" />
             <span className="font-bold text-sm">検索条件を変更する</span>
           </div>
-          <Filter size={18} className={isFilterOpen ? "text-rose-500" : "text-gray-400"} />
+          <Filter size={18} className="text-rose-500" />
         </button>
+      </div>
 
-        {isFilterOpen && (
-          <div className="p-4 bg-gray-50 border-t space-y-6 animate-fade-in-down">
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">性別</label>
-              <div className="flex gap-2">
-                {['すべて', '男性', '女性', 'その他'].map(g => (
-                  <button
-                    key={g}
-                    onClick={() => setFilterGender(g)}
-                    className={`px-3 py-1.5 text-sm rounded-full border ${filterGender === g ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-gray-700 border-gray-300'}`}
-                  >
-                    {g}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">エリア</label>
-              <select 
-                className="w-full p-2 text-sm border rounded-lg bg-white"
-                value={filterPrefecture}
-                onChange={(e) => setFilterPrefecture(e.target.value)}
+      {/* Filter Modal */}
+      {isFilterOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <Filter size={18} /> 検索条件
+              </h3>
+              <button 
+                onClick={() => setIsFilterOpen(false)}
+                className="p-1 hover:bg-gray-200 rounded-full transition"
               >
-                <option value="すべて">全国</option>
-                {PREFECTURES.map(pref => (
-                  <option key={pref} value={pref}>{pref}</option>
-                ))}
-              </select>
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6 overflow-y-auto">
+              {/* 性別 */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">性別</label>
+                <div className="flex gap-2">
+                  {['すべて', '男性', '女性', 'その他'].map(g => (
+                    <button
+                      key={g}
+                      onClick={() => setFilterGender(g)}
+                      className={`flex-1 py-2 text-sm rounded-lg border font-medium transition ${filterGender === g ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* エリア */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">エリア</label>
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-2.5 text-gray-400 w-4 h-4" />
+                  <select 
+                    className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-rose-500 outline-none appearance-none"
+                    value={filterPrefecture}
+                    onChange={(e) => setFilterPrefecture(e.target.value)}
+                  >
+                    <option value="すべて">全国</option>
+                    {PREFECTURES.map(pref => (
+                      <option key={pref} value={pref}>{pref}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* 年齢 */}
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">年齢 ({filterAgeRange.min}歳 - {filterAgeRange.max}歳)</label>
+                <div className="px-2 pt-2 pb-6">
+                  <DualRangeSlider 
+                    min={18} 
+                    max={80} 
+                    initialMin={filterAgeRange.min}
+                    initialMax={filterAgeRange.max}
+                    onChange={setFilterAgeRange} 
+                  />
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">年齢 (18歳以上)</label>
-              <div className="px-2">
-                <DualRangeSlider 
-                  min={18} 
-                  max={80} 
-                  initialMin={filterAgeRange.min}
-                  initialMax={filterAgeRange.max}
-                  onChange={setFilterAgeRange} 
-                />
-              </div>
+            <div className="p-4 border-t bg-gray-50 flex gap-3">
+               <button 
+                onClick={() => {
+                  setFilterGender('すべて');
+                  setFilterPrefecture('すべて');
+                  setFilterAgeRange({ min: 18, max: 60 });
+                }}
+                className="flex-1 py-3 text-gray-600 font-bold bg-white border border-gray-300 hover:bg-gray-50 rounded-xl transition text-sm"
+              >
+                リセット
+              </button>
+              <button 
+                onClick={() => setIsFilterOpen(false)}
+                className="flex-[2] py-3 bg-rose-500 text-white font-bold rounded-xl hover:bg-rose-600 transition shadow-md flex items-center justify-center gap-2 text-sm"
+              >
+                <Search size={18} /> この条件で検索
+              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredProfiles.length === 0 ? (
@@ -765,6 +808,11 @@ const Home = ({ profiles, onViewProfile }) => {
               </div>
               <div className="px-4 pb-4">
                 <button
+                  onClick={(e) => {
+                    e.stopPropagation(); // カードクリックと重複しないようにする
+                    // Homeから直接いいねできないようにする場合、ここは削除か別の処理
+                    onViewProfile(profile);
+                  }}
                   className="w-full bg-rose-50 text-rose-600 font-semibold py-2 rounded-lg hover:bg-rose-100 transition flex items-center justify-center gap-2"
                 >
                   <Mail size={18} /> 詳細をみる
@@ -1294,7 +1342,6 @@ export default function App() {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'interactions', interaction.id);
         await updateDoc(docRef, { status: 'rejected' }); // Or 'goodbye' status
         setChatTarget(null); // Close chat
-        alert("マッチングを解除しました。");
       } catch (e) {
         console.error("Unmatch error:", e);
         alert("解除に失敗しました。");
