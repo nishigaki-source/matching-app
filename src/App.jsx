@@ -27,7 +27,7 @@ import {
   uploadBytes, 
   getDownloadURL 
 } from 'firebase/storage';
-import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2, Search, Filter } from 'lucide-react';
+import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2, Search, Filter, X } from 'lucide-react';
 
 // --- Firebase Initialization ---
 
@@ -86,10 +86,8 @@ const DualRangeSlider = ({ min, max, onChange, initialMin, initialMax }) => {
   const maxValRef = useRef(initialMax);
   const range = useRef(null);
 
-  // Convert to percentage
   const getPercent = (value) => Math.round(((value - min) / (max - min)) * 100);
 
-  // Update range width/position when minVal changes
   useEffect(() => {
     const minPercent = getPercent(minVal);
     const maxPercent = getPercent(maxValRef.current);
@@ -100,7 +98,6 @@ const DualRangeSlider = ({ min, max, onChange, initialMin, initialMax }) => {
     }
   }, [minVal, min, max]);
 
-  // Update range width when maxVal changes
   useEffect(() => {
     const minPercent = getPercent(minValRef.current);
     const maxPercent = getPercent(maxVal);
@@ -152,7 +149,6 @@ const DualRangeSlider = ({ min, max, onChange, initialMin, initialMax }) => {
         <span>{maxVal}歳</span>
       </div>
 
-      {/* Internal CSS for Slider (scoped logic via classes) */}
       <style>{`
         .slider {
           position: relative;
@@ -166,7 +162,7 @@ const DualRangeSlider = ({ min, max, onChange, initialMin, initialMax }) => {
           height: 6px;
         }
         .slider__track {
-          background-color: #e5e7eb; /* gray-200 */
+          background-color: #e5e7eb;
           width: 100%;
           z-index: 1;
         }
@@ -181,20 +177,20 @@ const DualRangeSlider = ({ min, max, onChange, initialMin, initialMax }) => {
           height: 0;
           width: 100%;
           outline: none;
-          z-index: 3; /* Above track */
-          top: 3px; /* Center align with 6px track */
+          z-index: 3;
+          top: 3px;
         }
         .thumb::-webkit-slider-thumb {
           -webkit-appearance: none;
           -webkit-tap-highlight-color: transparent;
           background-color: #fff;
-          border: 2px solid #f43f5e; /* rose-500 */
+          border: 2px solid #f43f5e;
           border-radius: 50%;
           box-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
           cursor: pointer;
           height: 20px;
           width: 20px;
-          margin-top: 0px; /* Center thumb */
+          margin-top: 0px;
           pointer-events: all;
           position: relative;
         }
@@ -648,32 +644,24 @@ const Onboarding = ({ user, onComplete, initialData }) => {
 };
 
 // 4. Main App Components
-const Home = ({ profiles, onSelectUser }) => {
+const Home = ({ profiles, onSelectUser, onViewProfile }) => {
   const [filterGender, setFilterGender] = useState('すべて');
   const [filterPrefecture, setFilterPrefecture] = useState('すべて');
-  // Age filter state (Default: 18 - 60)
   const [filterAgeRange, setFilterAgeRange] = useState({ min: 18, max: 60 });
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const filteredProfiles = useMemo(() => {
     return profiles.filter(profile => {
-      // 性別フィルタ
       if (filterGender !== 'すべて' && profile.gender !== filterGender) return false;
-      
-      // エリアフィルタ
       if (filterPrefecture !== 'すべて' && profile.prefecture !== filterPrefecture) return false;
-
-      // 年齢フィルタ (Range Slider)
       const age = parseInt(profile.age, 10);
       if (age < filterAgeRange.min || age > filterAgeRange.max) return false;
-
       return true;
     });
   }, [profiles, filterGender, filterPrefecture, filterAgeRange]);
 
   return (
     <div className="pb-20">
-      {/* 検索・絞り込みバー */}
       <div className="bg-white sticky top-14 z-10 shadow-sm border-b">
         <button 
           onClick={() => setIsFilterOpen(!isFilterOpen)}
@@ -688,7 +676,6 @@ const Home = ({ profiles, onSelectUser }) => {
 
         {isFilterOpen && (
           <div className="p-4 bg-gray-50 border-t space-y-6 animate-fade-in-down">
-            {/* 性別 */}
             <div>
               <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">性別</label>
               <div className="flex gap-2">
@@ -704,7 +691,6 @@ const Home = ({ profiles, onSelectUser }) => {
               </div>
             </div>
 
-            {/* エリア */}
             <div>
               <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">エリア</label>
               <select 
@@ -719,7 +705,6 @@ const Home = ({ profiles, onSelectUser }) => {
               </select>
             </div>
 
-            {/* 年齢 (Slider) */}
             <div>
               <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">年齢 (18歳以上)</label>
               <div className="px-2">
@@ -754,7 +739,11 @@ const Home = ({ profiles, onSelectUser }) => {
           </div>
         ) : (
           filteredProfiles.map((profile) => (
-            <div key={profile.uid} className="bg-white rounded-xl shadow overflow-hidden flex flex-col">
+            <div 
+              key={profile.uid} 
+              className="bg-white rounded-xl shadow overflow-hidden flex flex-col cursor-pointer transition hover:shadow-md"
+              onClick={() => onViewProfile(profile)}
+            >
               <div className="h-24 bg-gray-200 relative">
                 {profile.coverPhotoURL ? (
                   <img src={profile.coverPhotoURL} alt="cover" className="w-full h-full object-cover" />
@@ -775,7 +764,10 @@ const Home = ({ profiles, onSelectUser }) => {
               </div>
               <div className="px-4 pb-4">
                 <button
-                  onClick={() => onSelectUser(profile)}
+                  onClick={(e) => {
+                    e.stopPropagation(); // カードクリックと重複しないようにする
+                    onSelectUser(profile);
+                  }}
                   className="w-full bg-rose-50 text-rose-600 font-semibold py-2 rounded-lg hover:bg-rose-100 transition flex items-center justify-center gap-2"
                 >
                   <Mail size={18} /> メッセージを送る
@@ -935,26 +927,43 @@ const MessagesList = ({ currentUser, messages, profiles, onSelectChat }) => {
   );
 };
 
-const Profile = ({ profile, isSelf, onEdit, onLogout }) => {
+const Profile = ({ profile, isSelf, onEdit, onLogout, onClose, onChat }) => {
   if (!profile) return null;
 
   return (
-    <div className="pb-20 bg-gray-50 min-h-screen">
-      <div className="h-32 bg-gray-200 relative overflow-hidden">
+    <div className="pb-20 bg-gray-50 min-h-screen relative">
+      {/* 閉じるボタン（他人のプロフィール表示時のみ） */}
+      {!isSelf && onClose && (
+        <button 
+          onClick={onClose} 
+          className="absolute top-4 left-4 z-20 bg-black/30 text-white p-2 rounded-full hover:bg-black/50 transition backdrop-blur-sm"
+        >
+          <X size={20} />
+        </button>
+      )}
+
+      <div className="h-48 bg-gray-200 relative overflow-hidden">
         {profile.coverPhotoURL ? (
           <img src={profile.coverPhotoURL} alt="Cover" className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full bg-rose-200" />
         )}
       </div>
-      <div className="px-4 -mt-10 mb-4">
+      <div className="px-4 -mt-12 mb-4 relative z-10">
         <div className="flex justify-between items-end">
-          <div className="p-1 bg-white rounded-full relative z-10">
+          <div className="p-1 bg-white rounded-full shadow-md">
             <UserAvatar user={profile} className="w-24 h-24" textSize="text-4xl" />
           </div>
-          {isSelf && (
-            <button onClick={onEdit} className="bg-white border text-gray-700 px-4 py-1.5 rounded-full text-sm font-medium hover:bg-gray-50 flex items-center gap-2 shadow-sm">
+          {isSelf ? (
+            <button onClick={onEdit} className="bg-white border text-gray-700 px-4 py-1.5 rounded-full text-sm font-medium hover:bg-gray-50 flex items-center gap-2 shadow-sm mb-2">
               <Edit2 size={14} /> 編集
+            </button>
+          ) : (
+            <button 
+              onClick={onChat}
+              className="bg-rose-500 text-white px-6 py-2 rounded-full text-sm font-bold hover:bg-rose-600 flex items-center gap-2 shadow-md mb-2"
+            >
+              <Mail size={16} /> メッセージ
             </button>
           )}
         </div>
@@ -969,17 +978,19 @@ const Profile = ({ profile, isSelf, onEdit, onLogout }) => {
           <p className="text-rose-500 text-sm font-medium mt-1">{profile.gender} • {profile.prefecture}</p>
         </div>
 
-        <div className="bg-white p-4 rounded-xl shadow-sm">
-          <h3 className="text-sm font-bold text-gray-400 mb-2 uppercase">自己紹介</h3>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <h3 className="text-sm font-bold text-gray-400 mb-3 uppercase tracking-wider">自己紹介</h3>
           <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
             {profile.bio || "自己紹介文がありません"}
           </p>
         </div>
 
+        {/* 基本情報など追加可能エリア */}
+        
         {isSelf && (
            <button
              onClick={onLogout}
-             className="w-full bg-white border border-red-200 text-red-500 py-3 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-red-50"
+             className="w-full bg-white border border-red-200 text-red-500 py-3 rounded-xl font-medium flex items-center justify-center gap-2 hover:bg-red-50 mt-8"
            >
              <LogOut size={18} /> ログアウト
            </button>
@@ -1000,6 +1011,9 @@ export default function App() {
   const [chatTarget, setChatTarget] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [requirePasswordSetup, setRequirePasswordSetup] = useState(false);
+  
+  // New state for viewing user profile details
+  const [viewingProfile, setViewingProfile] = useState(null);
 
   // 1. Authentication Logic
   useEffect(() => {
@@ -1080,6 +1094,13 @@ export default function App() {
     setRequirePasswordSetup(false);
   };
 
+  // State Reset when Tab Changes
+  useEffect(() => {
+    setViewingProfile(null);
+    setChatTarget(null);
+    setIsEditing(false);
+  }, [activeTab]);
+
   if (authLoading) return <div className="flex h-screen items-center justify-center text-rose-500">Loading...</div>;
 
   if (!user) {
@@ -1110,9 +1131,23 @@ export default function App() {
         <button onClick={() => setIsEditing(false)} className="absolute top-4 left-4 z-10 p-2 bg-gray-200 rounded-full shadow-md">
           <ArrowLeft size={20}/>
         </button>
-        {/* 編集時に既存データを渡す */}
         <Onboarding user={user} initialData={myProfile} onComplete={() => setIsEditing(false)} />
       </div>
+    );
+  }
+
+  // Viewing Other User's Profile
+  if (viewingProfile) {
+    return (
+      <Profile 
+        profile={viewingProfile} 
+        isSelf={false} 
+        onClose={() => setViewingProfile(null)}
+        onChat={() => {
+          setChatTarget(viewingProfile);
+          setViewingProfile(null);
+        }}
+      />
     );
   }
 
@@ -1130,7 +1165,13 @@ export default function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
-        return <Home profiles={allProfiles} onSelectUser={(u) => setChatTarget(u)} />;
+        return (
+          <Home 
+            profiles={allProfiles} 
+            onSelectUser={(u) => setChatTarget(u)} 
+            onViewProfile={(u) => setViewingProfile(u)}
+          />
+        );
       case 'messages':
         return (
           <MessagesList 
@@ -1150,7 +1191,7 @@ export default function App() {
           />
         );
       default:
-        return <Home profiles={allProfiles} onSelectUser={(u) => setChatTarget(u)} />;
+        return <Home profiles={allProfiles} onSelectUser={(u) => setChatTarget(u)} onViewProfile={(u) => setViewingProfile(u)} />;
     }
   };
 
