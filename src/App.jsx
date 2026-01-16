@@ -20,7 +20,8 @@ import {
   addDoc,
   onSnapshot,
   query,
-  serverTimestamp
+  serverTimestamp,
+  increment // 追加: カウントアップ用
 } from 'firebase/firestore';
 import { 
   getStorage, 
@@ -28,7 +29,7 @@ import {
   uploadBytes, 
   getDownloadURL 
 } from 'firebase/storage';
-import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2, Search, Filter, X, ThumbsUp, XCircle, Check, UserX } from 'lucide-react';
+import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2, Search, Filter, X, ThumbsUp, XCircle, Check, UserX, Calendar, Sparkles } from 'lucide-react';
 
 // --- Firebase Initialization ---
 
@@ -60,6 +61,13 @@ const PREFECTURES = [
   "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県"
 ];
 
+// 日付フォーマット関数
+const formatDate = (timestamp) => {
+  if (!timestamp) return '';
+  const date = timestamp.toDate();
+  return `${date.getFullYear()}年${date.getMonth() + 1}月`;
+};
+
 const UserAvatar = ({ user, className = "w-12 h-12", textSize = "text-lg" }) => {
   if (user?.photoURL) {
     return (
@@ -79,7 +87,6 @@ const UserAvatar = ({ user, className = "w-12 h-12", textSize = "text-lg" }) => 
 
 // --- Custom Components ---
 
-// Dual Range Slider Component
 const DualRangeSlider = ({ min, max, onChange, initialMin, initialMax }) => {
   const [minVal, setMinVal] = useState(initialMin);
   const [maxVal, setMaxVal] = useState(initialMax);
@@ -452,6 +459,8 @@ const Onboarding = ({ user, onComplete, initialData }) => {
     gender: initialData?.gender || '未設定',
     prefecture: initialData?.prefecture || '東京都',
     bio: initialData?.bio || '',
+    showJoinDate: initialData?.showJoinDate !== false, // Default true
+    showLikeCount: initialData?.showLikeCount !== false, // Default true
   });
   
   const [imageFile, setImageFile] = useState(null);
@@ -496,7 +505,8 @@ const Onboarding = ({ user, onComplete, initialData }) => {
         uid: user.uid,
         email: user.email,
         createdAt: initialData?.createdAt || serverTimestamp(),
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        receivedLikes: initialData?.receivedLikes || 0 // Initialize likes count
       });
       onComplete();
     } catch (err) {
@@ -628,6 +638,31 @@ const Onboarding = ({ user, onComplete, initialData }) => {
                 onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                 placeholder="趣味や休日の過ごし方など..."
               />
+            </div>
+
+            {/* Display Settings */}
+            <div className="pt-2 border-t mt-4">
+              <h3 className="text-sm font-bold text-gray-500 mb-3">表示設定</h3>
+              <div className="space-y-3">
+                <label className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700">登録日を表示する</span>
+                  <input 
+                    type="checkbox" 
+                    className="w-5 h-5 text-rose-500 rounded focus:ring-rose-500"
+                    checked={formData.showJoinDate}
+                    onChange={(e) => setFormData({...formData, showJoinDate: e.target.checked})}
+                  />
+                </label>
+                <label className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700">もらった「いいね！」数を表示する</span>
+                  <input 
+                    type="checkbox" 
+                    className="w-5 h-5 text-rose-500 rounded focus:ring-rose-500"
+                    checked={formData.showLikeCount}
+                    onChange={(e) => setFormData({...formData, showLikeCount: e.target.checked})}
+                  />
+                </label>
+              </div>
             </div>
           </div>
 
@@ -804,15 +839,27 @@ const Home = ({ profiles, onViewProfile }) => {
                   <span className="flex items-center gap-0.5"><MapPin size={14} /> {profile.prefecture}</span>
                   <span className="flex items-center gap-0.5"><User size={14} /> {profile.age}歳</span>
                 </div>
+                
+                {/* Additional Info Cards (Join Date / Likes) */}
+                {(profile.showJoinDate || profile.showLikeCount) && (
+                  <div className="flex gap-2 mt-3 flex-wrap">
+                    {profile.showJoinDate && profile.createdAt && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                        <Calendar size={10} /> {formatDate(profile.createdAt)}登録
+                      </span>
+                    )}
+                    {profile.showLikeCount && (
+                      <span className="inline-flex items-center gap-1 text-[10px] text-rose-500 bg-rose-50 px-2 py-1 rounded-full font-medium">
+                        <Heart size={10} className="fill-rose-500" /> {profile.receivedLikes || 0}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 <p className="mt-3 text-sm text-gray-600 line-clamp-2">{profile.bio}</p>
               </div>
               <div className="px-4 pb-4">
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation(); // カードクリックと重複しないようにする
-                    // Homeから直接いいねできないようにする場合、ここは削除か別の処理
-                    onViewProfile(profile);
-                  }}
                   className="w-full bg-rose-50 text-rose-600 font-semibold py-2 rounded-lg hover:bg-rose-100 transition flex items-center justify-center gap-2"
                 >
                   <Mail size={18} /> 詳細をみる
@@ -1106,6 +1153,22 @@ const Profile = ({ profile, isSelf, onEdit, onLogout, onClose, onLike }) => {
             <span className="text-lg font-normal text-gray-500">({profile.age})</span>
           </h1>
           <p className="text-rose-500 text-sm font-medium mt-1">{profile.gender} • {profile.prefecture}</p>
+          
+          {/* Join Date & Likes Display */}
+          {(profile.showJoinDate || profile.showLikeCount) && (
+            <div className="flex gap-2 mt-3 flex-wrap">
+              {profile.showJoinDate && profile.createdAt && (
+                <span className="inline-flex items-center gap-1 text-xs text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full">
+                  <Calendar size={14} /> {formatDate(profile.createdAt)}から利用
+                </span>
+              )}
+              {profile.showLikeCount && (
+                <span className="inline-flex items-center gap-1 text-xs text-rose-600 bg-rose-50 px-3 py-1.5 rounded-full font-bold">
+                  <Heart size={14} className="fill-rose-500" /> {profile.receivedLikes || 0} いいね！
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
@@ -1291,6 +1354,7 @@ export default function App() {
   const sendLike = async (targetProfile, message) => {
     if (!user) return;
     try {
+      // 1. Create interaction
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'interactions'), {
         from: user.uid,
         to: targetProfile.uid,
@@ -1299,6 +1363,13 @@ export default function App() {
         message: message,
         createdAt: serverTimestamp()
       });
+
+      // 2. Increment receivedLikes on target profile
+      const targetRef = doc(db, 'artifacts', appId, 'public', 'data', 'profiles', targetProfile.uid);
+      await updateDoc(targetRef, {
+        receivedLikes: increment(1)
+      });
+
       alert('いいねを送りました！');
       setViewingProfile(null);
     } catch (e) {
@@ -1331,7 +1402,6 @@ export default function App() {
   };
 
   const handleUnmatch = async (targetUid) => {
-    // Find interaction between current user and targetUid
     const interaction = interactions.find(i => 
       (i.from === user.uid && i.to === targetUid) || 
       (i.from === targetUid && i.to === user.uid)
@@ -1340,8 +1410,8 @@ export default function App() {
     if (interaction) {
       try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'interactions', interaction.id);
-        await updateDoc(docRef, { status: 'rejected' }); // Or 'goodbye' status
-        setChatTarget(null); // Close chat
+        await updateDoc(docRef, { status: 'rejected' });
+        setChatTarget(null); 
       } catch (e) {
         console.error("Unmatch error:", e);
         alert("解除に失敗しました。");
