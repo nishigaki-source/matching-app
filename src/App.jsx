@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
@@ -72,6 +72,144 @@ const UserAvatar = ({ user, className = "w-12 h-12", textSize = "text-lg" }) => 
   return (
     <div className={`${className} rounded-full bg-gray-200 flex items-center justify-center ${textSize} font-bold text-gray-500 border border-gray-100`}>
       {user?.displayName?.[0] || <User size={20} />}
+    </div>
+  );
+};
+
+// --- Custom Components ---
+
+// Dual Range Slider Component
+const DualRangeSlider = ({ min, max, onChange, initialMin, initialMax }) => {
+  const [minVal, setMinVal] = useState(initialMin);
+  const [maxVal, setMaxVal] = useState(initialMax);
+  const minValRef = useRef(initialMin);
+  const maxValRef = useRef(initialMax);
+  const range = useRef(null);
+
+  // Convert to percentage
+  const getPercent = (value) => Math.round(((value - min) / (max - min)) * 100);
+
+  // Update range width/position when minVal changes
+  useEffect(() => {
+    const minPercent = getPercent(minVal);
+    const maxPercent = getPercent(maxValRef.current);
+
+    if (range.current) {
+      range.current.style.left = `${minPercent}%`;
+      range.current.style.width = `${maxPercent - minPercent}%`;
+    }
+  }, [minVal, min, max]);
+
+  // Update range width when maxVal changes
+  useEffect(() => {
+    const minPercent = getPercent(minValRef.current);
+    const maxPercent = getPercent(maxVal);
+
+    if (range.current) {
+      range.current.style.width = `${maxPercent - minPercent}%`;
+    }
+  }, [maxVal, min, max]);
+
+  useEffect(() => {
+    onChange({ min: minVal, max: maxVal });
+  }, [minVal, maxVal]);
+
+  return (
+    <div className="relative w-full pt-4 pb-2">
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={minVal}
+        onChange={(event) => {
+          const value = Math.min(Number(event.target.value), maxVal - 1);
+          setMinVal(value);
+          minValRef.current = value;
+        }}
+        className="thumb thumb--left"
+        style={{ zIndex: minVal > max - 100 && "5" }}
+      />
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={maxVal}
+        onChange={(event) => {
+          const value = Math.max(Number(event.target.value), minVal + 1);
+          setMaxVal(value);
+          maxValRef.current = value;
+        }}
+        className="thumb thumb--right"
+      />
+
+      <div className="slider">
+        <div className="slider__track" />
+        <div ref={range} className="slider__range bg-rose-500" />
+      </div>
+      
+      <div className="flex justify-between mt-4 text-sm font-medium text-gray-600">
+        <span>{minVal}歳</span>
+        <span>{maxVal}歳</span>
+      </div>
+
+      {/* Internal CSS for Slider (scoped logic via classes) */}
+      <style>{`
+        .slider {
+          position: relative;
+          width: 100%;
+          height: 6px;
+        }
+        .slider__track,
+        .slider__range {
+          position: absolute;
+          border-radius: 3px;
+          height: 6px;
+        }
+        .slider__track {
+          background-color: #e5e7eb; /* gray-200 */
+          width: 100%;
+          z-index: 1;
+        }
+        .slider__range {
+          z-index: 2;
+        }
+        .thumb {
+          -webkit-appearance: none;
+          -webkit-tap-highlight-color: transparent;
+          pointer-events: none;
+          position: absolute;
+          height: 0;
+          width: 100%;
+          outline: none;
+          z-index: 3; /* Above track */
+          top: 3px; /* Center align with 6px track */
+        }
+        .thumb::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          -webkit-tap-highlight-color: transparent;
+          background-color: #fff;
+          border: 2px solid #f43f5e; /* rose-500 */
+          border-radius: 50%;
+          box-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+          cursor: pointer;
+          height: 20px;
+          width: 20px;
+          margin-top: 0px; /* Center thumb */
+          pointer-events: all;
+          position: relative;
+        }
+        .thumb::-moz-range-thumb {
+          background-color: #fff;
+          border: 2px solid #f43f5e;
+          border-radius: 50%;
+          box-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+          cursor: pointer;
+          height: 20px;
+          width: 20px;
+          pointer-events: all;
+          position: relative;
+        }
+      `}</style>
     </div>
   );
 };
@@ -513,8 +651,8 @@ const Onboarding = ({ user, onComplete, initialData }) => {
 const Home = ({ profiles, onSelectUser }) => {
   const [filterGender, setFilterGender] = useState('すべて');
   const [filterPrefecture, setFilterPrefecture] = useState('すべて');
-  const [filterMinAge, setFilterMinAge] = useState('');
-  const [filterMaxAge, setFilterMaxAge] = useState('');
+  // Age filter state (Default: 18 - 60)
+  const [filterAgeRange, setFilterAgeRange] = useState({ min: 18, max: 60 });
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   const filteredProfiles = useMemo(() => {
@@ -525,14 +663,13 @@ const Home = ({ profiles, onSelectUser }) => {
       // エリアフィルタ
       if (filterPrefecture !== 'すべて' && profile.prefecture !== filterPrefecture) return false;
 
-      // 年齢フィルタ
+      // 年齢フィルタ (Range Slider)
       const age = parseInt(profile.age, 10);
-      if (filterMinAge && age < parseInt(filterMinAge, 10)) return false;
-      if (filterMaxAge && age > parseInt(filterMaxAge, 10)) return false;
+      if (age < filterAgeRange.min || age > filterAgeRange.max) return false;
 
       return true;
     });
-  }, [profiles, filterGender, filterPrefecture, filterMinAge, filterMaxAge]);
+  }, [profiles, filterGender, filterPrefecture, filterAgeRange]);
 
   return (
     <div className="pb-20">
@@ -550,10 +687,10 @@ const Home = ({ profiles, onSelectUser }) => {
         </button>
 
         {isFilterOpen && (
-          <div className="p-4 bg-gray-50 border-t space-y-4 animate-fade-in-down">
+          <div className="p-4 bg-gray-50 border-t space-y-6 animate-fade-in-down">
             {/* 性別 */}
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">性別</label>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">性別</label>
               <div className="flex gap-2">
                 {['すべて', '男性', '女性', 'その他'].map(g => (
                   <button
@@ -569,7 +706,7 @@ const Home = ({ profiles, onSelectUser }) => {
 
             {/* エリア */}
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">エリア</label>
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">エリア</label>
               <select 
                 className="w-full p-2 text-sm border rounded-lg bg-white"
                 value={filterPrefecture}
@@ -582,24 +719,16 @@ const Home = ({ profiles, onSelectUser }) => {
               </select>
             </div>
 
-            {/* 年齢 */}
+            {/* 年齢 (Slider) */}
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">年齢</label>
-              <div className="flex items-center gap-2">
-                <input 
-                  type="number" 
-                  placeholder="下限なし" 
-                  className="w-full p-2 text-sm border rounded-lg"
-                  value={filterMinAge}
-                  onChange={(e) => setFilterMinAge(e.target.value)}
-                />
-                <span className="text-gray-400">〜</span>
-                <input 
-                  type="number" 
-                  placeholder="上限なし" 
-                  className="w-full p-2 text-sm border rounded-lg"
-                  value={filterMaxAge}
-                  onChange={(e) => setFilterMaxAge(e.target.value)}
+              <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">年齢 (18歳以上)</label>
+              <div className="px-2">
+                <DualRangeSlider 
+                  min={18} 
+                  max={80} 
+                  initialMin={filterAgeRange.min}
+                  initialMax={filterAgeRange.max}
+                  onChange={setFilterAgeRange} 
                 />
               </div>
             </div>
@@ -616,8 +745,7 @@ const Home = ({ profiles, onSelectUser }) => {
               onClick={() => {
                 setFilterGender('すべて');
                 setFilterPrefecture('すべて');
-                setFilterMinAge('');
-                setFilterMaxAge('');
+                setFilterAgeRange({ min: 18, max: 60 });
               }}
               className="mt-4 text-rose-500 text-sm font-medium hover:underline"
             >
