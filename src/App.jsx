@@ -21,7 +21,7 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
-  increment // 追加: カウントアップ用
+  increment
 } from 'firebase/firestore';
 import { 
   getStorage, 
@@ -29,7 +29,7 @@ import {
   uploadBytes, 
   getDownloadURL 
 } from 'firebase/storage';
-import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2, Search, Filter, X, ThumbsUp, XCircle, Check, UserX, Calendar, Sparkles } from 'lucide-react';
+import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2, Search, Filter, X, ThumbsUp, XCircle, Check, UserX, Calendar } from 'lucide-react';
 
 // --- Firebase Initialization ---
 
@@ -61,7 +61,6 @@ const PREFECTURES = [
   "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県"
 ];
 
-// 日付フォーマット関数
 const formatDate = (timestamp) => {
   if (!timestamp) return '';
   const date = timestamp.toDate();
@@ -459,8 +458,8 @@ const Onboarding = ({ user, onComplete, initialData }) => {
     gender: initialData?.gender || '未設定',
     prefecture: initialData?.prefecture || '東京都',
     bio: initialData?.bio || '',
-    showJoinDate: initialData?.showJoinDate !== false, // Default true
-    showLikeCount: initialData?.showLikeCount !== false, // Default true
+    showJoinDate: initialData?.showJoinDate !== false,
+    showLikeCount: initialData?.showLikeCount !== false,
   });
   
   const [imageFile, setImageFile] = useState(null);
@@ -506,7 +505,7 @@ const Onboarding = ({ user, onComplete, initialData }) => {
         email: user.email,
         createdAt: initialData?.createdAt || serverTimestamp(),
         updatedAt: serverTimestamp(),
-        receivedLikes: initialData?.receivedLikes || 0 // Initialize likes count
+        receivedLikes: initialData?.receivedLikes || 0
       });
       onComplete();
     } catch (err) {
@@ -698,19 +697,14 @@ const Home = ({ profiles, onViewProfile }) => {
 
   return (
     <div className="pb-20">
-      {/* 検索・絞り込みバー */}
-      <div className="bg-white sticky top-14 z-10 shadow-sm border-b">
-        <button 
-          onClick={() => setIsFilterOpen(true)}
-          className="w-full flex items-center justify-between p-4 text-gray-700 hover:bg-gray-50 transition"
-        >
-          <div className="flex items-center gap-2">
-            <Search size={20} className="text-rose-500" />
-            <span className="font-bold text-sm">検索条件を変更する</span>
-          </div>
-          <Filter size={18} className="text-rose-500" />
-        </button>
-      </div>
+      {/* 検索ボタン (右下固定) */}
+      <button 
+        onClick={() => setIsFilterOpen(true)}
+        className="fixed bottom-24 right-4 z-30 bg-white p-4 rounded-full shadow-xl border border-rose-100 text-rose-500 hover:bg-rose-50 transition-transform hover:scale-105 flex items-center justify-center"
+        aria-label="検索条件を変更"
+      >
+        <Search size={28} />
+      </button>
 
       {/* Filter Modal */}
       {isFilterOpen && (
@@ -1052,49 +1046,6 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages, onUnmatch }
   );
 };
 
-const MessagesList = ({ currentUser, matches, profiles, onSelectChat }) => {
-  if (matches.length === 0) {
-    return (
-      <div className="p-8 text-center text-gray-500">
-        <MessageCircle size={48} className="mx-auto mb-2 opacity-20" />
-        <p>まだマッチングした相手がいません</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="pb-20">
-      <h2 className="px-4 py-3 text-lg font-bold text-gray-800 border-b">メッセージ</h2>
-      <div className="divide-y">
-        {matches.map((match) => {
-          const otherUid = match.from === currentUser.uid ? match.to : match.from;
-          const user = profiles.find(p => p.uid === otherUid);
-          if (!user) return null;
-
-          return (
-            <div
-              key={match.id}
-              onClick={() => onSelectChat(user)}
-              className="px-4 py-3 hover:bg-gray-50 cursor-pointer flex items-center gap-3"
-            >
-              <UserAvatar user={user} className="w-12 h-12 flex-shrink-0" />
-              <div className="flex-grow min-w-0">
-                <div className="flex justify-between items-baseline mb-1">
-                  <h3 className="font-bold text-gray-800 truncate">{user.displayName}</h3>
-                  <span className="text-xs text-rose-500 font-bold bg-rose-50 px-2 py-0.5 rounded-full">MATCHED</span>
-                </div>
-                <p className="text-sm text-gray-500 truncate">
-                  チャットを始めましょう
-                </p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
 const Profile = ({ profile, isSelf, onEdit, onLogout, onClose, onLike }) => {
   const [likeMessage, setLikeMessage] = useState('');
   const [isLikeModalOpen, setIsLikeModalOpen] = useState(false);
@@ -1354,7 +1305,6 @@ export default function App() {
   const sendLike = async (targetProfile, message) => {
     if (!user) return;
     try {
-      // 1. Create interaction
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'interactions'), {
         from: user.uid,
         to: targetProfile.uid,
@@ -1364,7 +1314,6 @@ export default function App() {
         createdAt: serverTimestamp()
       });
 
-      // 2. Increment receivedLikes on target profile
       const targetRef = doc(db, 'artifacts', appId, 'public', 'data', 'profiles', targetProfile.uid);
       await updateDoc(targetRef, {
         receivedLikes: increment(1)
