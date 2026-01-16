@@ -16,6 +16,7 @@ import {
   collection,
   doc,
   setDoc,
+  updateDoc, // 追加
   addDoc,
   onSnapshot,
   query,
@@ -27,7 +28,7 @@ import {
   uploadBytes, 
   getDownloadURL 
 } from 'firebase/storage';
-import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2, Search, Filter, X } from 'lucide-react';
+import { Heart, MessageCircle, User, LogOut, Send, MapPin, Mail, Edit2, ArrowLeft, CheckCircle, Lock, Link as LinkIcon, KeyRound, Camera, ImageIcon, Image as ImageIcon2, Search, Filter, X, ThumbsUp, XCircle, Check } from 'lucide-react';
 
 // --- Firebase Initialization ---
 
@@ -644,7 +645,7 @@ const Onboarding = ({ user, onComplete, initialData }) => {
 };
 
 // 4. Main App Components
-const Home = ({ profiles, onSelectUser, onViewProfile }) => {
+const Home = ({ profiles, onViewProfile }) => {
   const [filterGender, setFilterGender] = useState('すべて');
   const [filterPrefecture, setFilterPrefecture] = useState('すべて');
   const [filterAgeRange, setFilterAgeRange] = useState({ min: 18, max: 60 });
@@ -764,19 +765,69 @@ const Home = ({ profiles, onSelectUser, onViewProfile }) => {
               </div>
               <div className="px-4 pb-4">
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation(); // カードクリックと重複しないようにする
-                    onSelectUser(profile);
-                  }}
                   className="w-full bg-rose-50 text-rose-600 font-semibold py-2 rounded-lg hover:bg-rose-100 transition flex items-center justify-center gap-2"
                 >
-                  <Mail size={18} /> メッセージを送る
+                  <Mail size={18} /> 詳細をみる
                 </button>
               </div>
             </div>
           ))
         )}
       </div>
+    </div>
+  );
+};
+
+// Likes List (Incoming Likes)
+const LikesList = ({ currentUser, likes, profiles, onAnswer }) => {
+  if (likes.length === 0) {
+    return (
+      <div className="p-8 text-center text-gray-500">
+        <Heart size={48} className="mx-auto mb-2 opacity-20" />
+        <p>まだ「いいね」は届いていません</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pb-20 p-4 space-y-4">
+      <h2 className="text-lg font-bold text-gray-800 mb-4 px-2 border-l-4 border-rose-500">あなたへのいいね</h2>
+      {likes.map(like => {
+        const profile = profiles.find(p => p.uid === like.from);
+        if (!profile) return null;
+        return (
+          <div key={like.id} className="bg-white rounded-xl shadow p-4 flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <UserAvatar user={profile} className="w-12 h-12" />
+              <div>
+                <h3 className="font-bold text-gray-800">{profile.displayName} <span className="text-xs font-normal text-gray-500">({profile.age}歳)</span></h3>
+                <p className="text-xs text-gray-500">{profile.prefecture}</p>
+              </div>
+            </div>
+            
+            {like.message && (
+              <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600 italic">
+                "{like.message}"
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-1">
+              <button 
+                onClick={() => onAnswer(like, false)}
+                className="flex-1 border border-gray-300 text-gray-500 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1 hover:bg-gray-100"
+              >
+                <XCircle size={16} /> ごめんなさい
+              </button>
+              <button 
+                onClick={() => onAnswer(like, true)}
+                className="flex-1 bg-rose-500 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1 hover:bg-rose-600"
+              >
+                <Check size={16} /> マッチング
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -866,43 +917,29 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages }) => {
   );
 };
 
-const MessagesList = ({ currentUser, messages, profiles, onSelectChat }) => {
-  const conversationUserIds = useMemo(() => {
-    const ids = new Set();
-    messages.forEach(m => {
-      if (m.from === currentUser.uid) ids.add(m.to);
-      if (m.to === currentUser.uid) ids.add(m.from);
-    });
-    return Array.from(ids);
-  }, [messages, currentUser.uid]);
-
-  const conversations = useMemo(() => {
-    return conversationUserIds.map(uid => {
-      const user = profiles.find(p => p.uid === uid);
-      if (!user) return null;
-      
-      const lastMsg = messages
-        .filter(m => (m.from === uid && m.to === currentUser.uid) || (m.from === currentUser.uid && m.to === uid))
-        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))[0];
-        
-      return { user, lastMsg };
-    }).filter(Boolean).sort((a, b) => (b.lastMsg?.createdAt?.seconds || 0) - (a.lastMsg?.createdAt?.seconds || 0));
-  }, [conversationUserIds, profiles, messages, currentUser.uid]);
+const MessagesList = ({ currentUser, matches, profiles, onSelectChat }) => {
+  if (matches.length === 0) {
+    return (
+      <div className="p-8 text-center text-gray-500">
+        <MessageCircle size={48} className="mx-auto mb-2 opacity-20" />
+        <p>まだマッチングした相手がいません</p>
+      </div>
+    );
+  }
 
   return (
     <div className="pb-20">
       <h2 className="px-4 py-3 text-lg font-bold text-gray-800 border-b">メッセージ</h2>
-      {conversations.length === 0 ? (
-        <div className="p-8 text-center text-gray-500">
-          <Mail size={48} className="mx-auto mb-2 opacity-20" />
-          <p>まだメッセージはありません</p>
-          <p className="text-sm mt-2">気になる相手にメッセージを送ってみましょう</p>
-        </div>
-      ) : (
-        <div className="divide-y">
-          {conversations.map(({ user, lastMsg }) => (
+      <div className="divide-y">
+        {matches.map((match) => {
+          // match data contains from/to/status. Find the OTHER user.
+          const otherUid = match.from === currentUser.uid ? match.to : match.from;
+          const user = profiles.find(p => p.uid === otherUid);
+          if (!user) return null;
+
+          return (
             <div
-              key={user.uid}
+              key={match.id}
               onClick={() => onSelectChat(user)}
               className="px-4 py-3 hover:bg-gray-50 cursor-pointer flex items-center gap-3"
             >
@@ -910,29 +947,36 @@ const MessagesList = ({ currentUser, messages, profiles, onSelectChat }) => {
               <div className="flex-grow min-w-0">
                 <div className="flex justify-between items-baseline mb-1">
                   <h3 className="font-bold text-gray-800 truncate">{user.displayName}</h3>
-                  <span className="text-xs text-gray-400">
-                    {lastMsg?.createdAt ? new Date(lastMsg.createdAt.seconds * 1000).toLocaleDateString() : ''}
-                  </span>
+                  <span className="text-xs text-rose-500 font-bold bg-rose-50 px-2 py-0.5 rounded-full">MATCHED</span>
                 </div>
                 <p className="text-sm text-gray-500 truncate">
-                  {lastMsg?.from === currentUser.uid ? <span className="text-gray-400 mr-1">あなた:</span> : ''}
-                  {lastMsg?.content}
+                  チャットを始めましょう
                 </p>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 };
 
-const Profile = ({ profile, isSelf, onEdit, onLogout, onClose, onChat }) => {
+const Profile = ({ profile, isSelf, onEdit, onLogout, onClose, onLike }) => {
+  const [likeMessage, setLikeMessage] = useState('');
+  const [isLikeModalOpen, setIsLikeModalOpen] = useState(false);
+
   if (!profile) return null;
+
+  const handleLikeSubmit = () => {
+    if (onLike) {
+      onLike(profile, likeMessage);
+      setIsLikeModalOpen(false);
+    }
+  };
 
   return (
     <div className="pb-20 bg-gray-50 min-h-screen relative">
-      {/* 閉じるボタン（他人のプロフィール表示時のみ） */}
+      {/* Close Button for Other Profiles */}
       {!isSelf && onClose && (
         <button 
           onClick={onClose} 
@@ -960,10 +1004,10 @@ const Profile = ({ profile, isSelf, onEdit, onLogout, onClose, onChat }) => {
             </button>
           ) : (
             <button 
-              onClick={onChat}
-              className="bg-rose-500 text-white px-6 py-2 rounded-full text-sm font-bold hover:bg-rose-600 flex items-center gap-2 shadow-md mb-2"
+              onClick={() => setIsLikeModalOpen(true)}
+              className="bg-rose-500 text-white px-6 py-2 rounded-full text-sm font-bold hover:bg-rose-600 flex items-center gap-2 shadow-md mb-2 transform transition active:scale-95"
             >
-              <Mail size={16} /> メッセージ
+              <ThumbsUp size={18} /> いいね！
             </button>
           )}
         </div>
@@ -984,8 +1028,6 @@ const Profile = ({ profile, isSelf, onEdit, onLogout, onClose, onChat }) => {
             {profile.bio || "自己紹介文がありません"}
           </p>
         </div>
-
-        {/* 基本情報など追加可能エリア */}
         
         {isSelf && (
            <button
@@ -996,6 +1038,40 @@ const Profile = ({ profile, isSelf, onEdit, onLogout, onClose, onChat }) => {
            </button>
         )}
       </div>
+
+      {/* Like Message Modal */}
+      {isLikeModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-fade-in-up">
+            <h3 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2">
+              <ThumbsUp className="text-rose-500" /> いいね！を送る
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              相手にメッセージを添えてアピールしましょう（1通のみ送れます）。
+            </p>
+            <textarea
+              className="w-full border rounded-lg p-3 text-sm focus:ring-2 focus:ring-rose-500 outline-none mb-4 h-24"
+              placeholder="はじめまして！プロフィールを見て気になりました..."
+              value={likeMessage}
+              onChange={(e) => setLikeMessage(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setIsLikeModalOpen(false)}
+                className="flex-1 py-2 text-gray-500 font-bold hover:bg-gray-100 rounded-lg transition"
+              >
+                キャンセル
+              </button>
+              <button 
+                onClick={handleLikeSubmit}
+                className="flex-1 py-2 bg-rose-500 text-white font-bold rounded-lg hover:bg-rose-600 transition shadow-md"
+              >
+                送信する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1008,11 +1084,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [allProfiles, setAllProfiles] = useState([]);
   const [allMessages, setAllMessages] = useState([]);
+  const [interactions, setInteractions] = useState([]); // Like/Match Status
   const [chatTarget, setChatTarget] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [requirePasswordSetup, setRequirePasswordSetup] = useState(false);
-  
-  // New state for viewing user profile details
   const [viewingProfile, setViewingProfile] = useState(null);
 
   // 1. Authentication Logic
@@ -1054,6 +1129,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
+    // Fetch My Profile
     const unsubMyProfile = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'profiles', user.uid), (docSnap) => {
       if (docSnap.exists()) {
         setMyProfile(docSnap.data());
@@ -1063,6 +1139,7 @@ export default function App() {
       }
     });
 
+    // Fetch All Profiles
     const qProfiles = query(collection(db, 'artifacts', appId, 'public', 'data', 'profiles'));
     const unsubProfiles = onSnapshot(qProfiles, (snapshot) => {
       const profiles = [];
@@ -1072,6 +1149,7 @@ export default function App() {
       setAllProfiles(profiles);
     });
 
+    // Fetch All Messages
     const qMessages = query(collection(db, 'artifacts', appId, 'public', 'data', 'messages'));
     const unsubMessages = onSnapshot(qMessages, (snapshot) => {
       const msgs = [];
@@ -1081,10 +1159,25 @@ export default function App() {
       setAllMessages(msgs);
     });
 
+    // Fetch Interactions (Likes, Matches)
+    const qInteractions = query(collection(db, 'artifacts', appId, 'public', 'data', 'interactions'));
+    const unsubInteractions = onSnapshot(qInteractions, (snapshot) => {
+      const inters = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        // Only keep interactions involving me
+        if (data.from === user.uid || data.to === user.uid) {
+          inters.push({ id: doc.id, ...data });
+        }
+      });
+      setInteractions(inters);
+    });
+
     return () => {
       unsubMyProfile();
       unsubProfiles();
       unsubMessages();
+      unsubInteractions();
     };
   }, [user]);
 
@@ -1101,29 +1194,91 @@ export default function App() {
     setIsEditing(false);
   }, [activeTab]);
 
+  // --- Logic Helpers ---
+
+  // Filter profiles for Home: Exclude anyone I have interacted with (liked, matched, rejected)
+  const homeProfiles = useMemo(() => {
+    return allProfiles.filter(p => {
+      // Check if any interaction exists between me and this person
+      const hasInteraction = interactions.some(i => 
+        (i.from === user?.uid && i.to === p.uid) || 
+        (i.from === p.uid && i.to === user?.uid && i.status !== 'pending') // Hide if I rejected/matched them. If they liked me (pending), maybe don't show in Home, show in Likes tab?
+        // Let's hide anyone who has sent me a like from Home, forcing me to check Likes tab.
+        // Actually, simple rule: remove anyone involved in ANY interaction id pair.
+      );
+      // More strict: if there is an interaction, don't show in Home.
+      const exists = interactions.some(i => (i.from === user?.uid && i.to === p.uid) || (i.from === p.uid && i.to === user?.uid));
+      return !exists;
+    });
+  }, [allProfiles, interactions, user]);
+
+  // Incoming Likes: Status pending, To me
+  const incomingLikes = useMemo(() => {
+    return interactions.filter(i => i.to === user?.uid && i.status === 'pending');
+  }, [interactions, user]);
+
+  // Matches: Status matched
+  const myMatches = useMemo(() => {
+    return interactions.filter(i => i.status === 'matched');
+  }, [interactions]);
+
+
+  // Action Handlers
+  const sendLike = async (targetProfile, message) => {
+    if (!user) return;
+    try {
+      // Create interaction
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'interactions'), {
+        from: user.uid,
+        to: targetProfile.uid,
+        type: 'like',
+        status: 'pending',
+        message: message,
+        createdAt: serverTimestamp()
+      });
+      alert('いいねを送りました！');
+      setViewingProfile(null); // Close profile view
+    } catch (e) {
+      console.error(e);
+      alert('エラーが発生しました');
+    }
+  };
+
+  const answerLike = async (interaction, isYes) => {
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'interactions', interaction.id);
+      if (isYes) {
+        await updateDoc(docRef, { status: 'matched' });
+        
+        // Add the initial message to chat history if exists
+        if (interaction.message) {
+           await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'messages'), {
+            from: interaction.from,
+            to: interaction.to,
+            content: interaction.message,
+            createdAt: serverTimestamp(),
+            read: false
+          });
+        }
+        alert('マッチングしました！メッセージ画面からチャットできます。');
+      } else {
+        await updateDoc(docRef, { status: 'rejected' });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+
+  // --- Render ---
+
   if (authLoading) return <div className="flex h-screen items-center justify-center text-rose-500">Loading...</div>;
 
-  if (!user) {
-    return <AuthScreen />;
-  }
+  if (!user) return <AuthScreen />;
 
-  if (requirePasswordSetup && !myProfile) {
-    return (
-      <PasswordSetup 
-        user={user} 
-        onComplete={() => setRequirePasswordSetup(false)} 
-      />
-    );
-  }
+  if (requirePasswordSetup && !myProfile) return <PasswordSetup user={user} onComplete={() => setRequirePasswordSetup(false)} />;
 
-  if (!myProfile && !isEditing) {
-    return (
-      <Onboarding 
-        user={user} 
-        onComplete={() => setMyProfile({})}
-      />
-    );
-  }
+  if (!myProfile && !isEditing) return <Onboarding user={user} onComplete={() => setMyProfile({})} />;
 
   if (isEditing) {
     return (
@@ -1136,17 +1291,14 @@ export default function App() {
     );
   }
 
-  // Viewing Other User's Profile
+  // View Other User
   if (viewingProfile) {
     return (
       <Profile 
         profile={viewingProfile} 
         isSelf={false} 
         onClose={() => setViewingProfile(null)}
-        onChat={() => {
-          setChatTarget(viewingProfile);
-          setViewingProfile(null);
-        }}
+        onLike={sendLike}
       />
     );
   }
@@ -1167,15 +1319,25 @@ export default function App() {
       case 'home':
         return (
           <Home 
-            profiles={allProfiles} 
-            onSelectUser={(u) => setChatTarget(u)} 
+            profiles={homeProfiles} 
             onViewProfile={(u) => setViewingProfile(u)}
+            onSelectUser={() => {}} // Homeからは直接チャット不可
+          />
+        );
+      case 'likes':
+        return (
+          <LikesList 
+            currentUser={user}
+            likes={incomingLikes}
+            profiles={allProfiles}
+            onAnswer={answerLike}
           />
         );
       case 'messages':
         return (
           <MessagesList 
             currentUser={user} 
+            matches={myMatches}
             messages={allMessages} 
             profiles={allProfiles}
             onSelectChat={(u) => setChatTarget(u)} 
@@ -1191,7 +1353,7 @@ export default function App() {
           />
         );
       default:
-        return <Home profiles={allProfiles} onSelectUser={(u) => setChatTarget(u)} onViewProfile={(u) => setViewingProfile(u)} />;
+        return null;
     }
   };
 
@@ -1214,14 +1376,21 @@ export default function App() {
           <span className="text-[10px] font-medium">さがす</span>
         </button>
         <button 
+          onClick={() => setActiveTab('likes')}
+          className={`flex flex-col items-center gap-1 ${activeTab === 'likes' ? 'text-rose-500' : 'text-gray-400'} relative`}
+        >
+          <Heart size={24} />
+          <span className="text-[10px] font-medium">お相手から</span>
+          {incomingLikes.length > 0 && (
+             <span className="absolute top-0 right-4 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+          )}
+        </button>
+        <button 
           onClick={() => setActiveTab('messages')}
           className={`flex flex-col items-center gap-1 ${activeTab === 'messages' ? 'text-rose-500' : 'text-gray-400'} relative`}
         >
           <MessageCircle size={24} />
           <span className="text-[10px] font-medium">メッセージ</span>
-          {allMessages.some(m => m.to === user.uid && !m.read && m.from !== user.uid) && (
-             <span className="absolute top-0 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
-          )}
         </button>
         <button 
           onClick={() => setActiveTab('profile')}
