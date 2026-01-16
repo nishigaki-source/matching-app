@@ -20,9 +20,7 @@ import {
   addDoc,
   onSnapshot,
   query,
-  serverTimestamp,
-  where,
-  getDocs
+  serverTimestamp
 } from 'firebase/firestore';
 import { 
   getStorage, 
@@ -837,6 +835,7 @@ const LikesList = ({ currentUser, likes, profiles, onAnswer }) => {
 const MessageDetail = ({ currentUser, targetUser, onClose, messages, onUnmatch }) => {
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [showUnmatchModal, setShowUnmatchModal] = useState(false);
 
   const chatHistory = useMemo(() => {
     return messages.filter(m => 
@@ -866,12 +865,6 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages, onUnmatch }
     }
   };
 
-  const confirmUnmatch = () => {
-    if (window.confirm("本当にマッチングを解除しますか？\n相手とのメッセージは全て見られなくなり、元に戻すことはできません。")) {
-      onUnmatch(targetUser.uid);
-    }
-  };
-
   return (
     <div className="fixed inset-0 bg-white z-50 flex flex-col">
       <div className="bg-white border-b px-4 py-3 flex items-center gap-3 shadow-sm">
@@ -884,7 +877,7 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages, onUnmatch }
           <p className="text-xs text-gray-500">{targetUser.prefecture}</p>
         </div>
         <button 
-          onClick={confirmUnmatch}
+          onClick={() => setShowUnmatchModal(true)}
           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition"
           title="さようなら（マッチング解除）"
         >
@@ -928,6 +921,38 @@ const MessageDetail = ({ currentUser, targetUser, onClose, messages, onUnmatch }
           <Send size={20} />
         </button>
       </form>
+
+      {/* Unmatch Confirmation Modal */}
+      {showUnmatchModal && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl animate-fade-in-up text-center">
+            <div className="mx-auto w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
+              <UserX className="text-red-500 w-6 h-6" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">マッチングを解除しますか？</h3>
+            <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+              相手とのメッセージは全て見られなくなり、元に戻すことはできません。本当によろしいですか？
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowUnmatchModal(false)}
+                className="flex-1 py-2.5 text-gray-600 font-bold bg-gray-100 hover:bg-gray-200 rounded-xl transition"
+              >
+                キャンセル
+              </button>
+              <button 
+                onClick={() => {
+                  onUnmatch(targetUser.uid);
+                  setShowUnmatchModal(false);
+                }}
+                className="flex-1 py-2.5 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition shadow-md"
+              >
+                解除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
